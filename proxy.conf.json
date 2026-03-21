@@ -1,0 +1,11 @@
+{
+  "/api-bcra": {
+    "target": "https://api.bcra.gob.ar",
+    "secure": false,
+    "changeOrigin": true,
+    "pathRewrite": {
+      "^/api-bcra": ""
+    },
+    "logLevel": "debug"
+  }
+}
