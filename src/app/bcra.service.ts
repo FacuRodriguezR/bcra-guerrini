@@ -16,4 +16,8 @@ export class BcraService {
   getDeudas(cuit: string): Observable<any> {
     return this.http.get(`${this.baseUrl}/Historicas/${cuit}`);
   }
+
+  getChequesRechazados(cuit: string): Observable<any> {
+    return this.http.get(`${this.baseUrl}/ChequesRechazados/${cuit}`);
+  }
 }
