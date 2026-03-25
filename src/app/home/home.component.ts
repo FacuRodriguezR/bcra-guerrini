@@ -5,6 +5,18 @@ import { BcraService } from '../bcra.service';
 import { catchError, delay, of } from 'rxjs';
 import { HeaderComponent } from '../components/header/header.component';
 
+interface ConsultaCuit {
+  cuit: string;
+  nombre: string; // <-- Nuevo campo para la razón social
+  data: any;
+  analisis: {
+    total: number;
+    malo: number;
+    porcentajeMalo: number;
+    rechazado: boolean;
+  } | null;
+}
+
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -17,42 +29,50 @@ export class HomeComponent {
   private bcraSvc = inject(BcraService);
 
   cuitBusqueda = '';
-  resultado = signal<any>(null);
   cargando = signal<boolean>(false);
   errorConsulta = signal<string | null>(null);
 
-  // Resultado de la validación de riesgo
-  estadoValidacion = signal<{
-    total: number,
-    malo: number,
-    porcentajeMalo: number,
-    rechazado: boolean
-  } | null>(null);
+  consultasAcumuladas = signal<ConsultaCuit[]>([]);
+  mostrarDetalles = signal<boolean>(false);
 
-  buscarDeuda() {
-    if (!this.cuitBusqueda || this.cuitBusqueda.length < 11) return;
+  agregarConsulta() {
+    const cuit = this.cuitBusqueda.trim();
+    if (!cuit || cuit.length < 11) return;
+
+    if (this.consultasAcumuladas().some(c => c.cuit === cuit)) {
+      this.errorConsulta.set(`El CUIT ${cuit} ya está en la lista.`);
+      return;
+    }
 
     this.cargando.set(true);
-    this.resultado.set(null);
-    this.estadoValidacion.set(null);
     this.errorConsulta.set(null);
 
-    this.bcraSvc.getDeudas(this.cuitBusqueda)
+    this.bcraSvc.getDeudas(cuit)
       .pipe(
-        delay(1000), // Delay para suavizar la carga y evitar bloqueos del BCRA
+        delay(800),
         catchError(error => {
-          console.error('Error en la consulta', error);
-          this.errorConsulta.set('No se pudo obtener respuesta del BCRA. Verifique la conexión.');
+          this.errorConsulta.set(`Error con CUIT ${cuit}. Intente nuevamente.`);
           return of(null);
         })
       )
       .subscribe({
         next: (data) => {
           if (data && data.results) {
-            this.resultado.set(data);
-            this.procesarRiesgo(data);
-          } else if (!this.errorConsulta()) {
-            this.errorConsulta.set('El CUIT ingresado no posee registros en la base de datos.');
+            const analisis = this.procesarRiesgo(data);
+
+            // Extraemos la denominación (Nombre) de la respuesta del BCRA
+            const nombrePersona = data.results.denominacion || 'Nombre no disponible';
+
+            this.consultasAcumuladas.update(prev => [...prev, {
+              cuit: cuit,
+              nombre: nombrePersona, // Guardamos el nombre
+              data: data,
+              analisis: analisis
+            }]);
+
+            this.cuitBusqueda = '';
+          } else {
+            this.errorConsulta.set(`El CUIT ${cuit} no tiene registros.`);
           }
           this.cargando.set(false);
         }
@@ -60,23 +80,26 @@ export class HomeComponent {
   }
 
   private procesarRiesgo(data: any) {
-    if (!data.results?.periodos?.length) return;
+    if (!data.results?.periodos?.length) return null;
 
-    const entidades = data.results.periodos[0].entidades;
+    const entidades = data.results.periodos[0].entidades || [];
     const totalDeuda = entidades.reduce((acc: number, e: any) => acc + (e.monto || 0), 0);
     const deudaMala = entidades
       .filter((e: any) => e.situacion > 1)
       .reduce((acc: number, e: any) => acc + (e.monto || 0), 0);
 
     const porcentajeMalo = totalDeuda > 0 ? (deudaMala * 100) / totalDeuda : 0;
-    const rechazado = porcentajeMalo > 10;
 
-    this.estadoValidacion.set({
+    return {
       total: totalDeuda,
       malo: deudaMala,
       porcentajeMalo: porcentajeMalo,
-      rechazado: rechazado
-    });
+      rechazado: porcentajeMalo > 10
+    };
+  }
+
+  toggleMostrar() {
+    this.mostrarDetalles.set(true);
   }
 
   formatPeriodo(p: string) {
@@ -85,8 +108,8 @@ export class HomeComponent {
 
   getSituacionClass(s: number) {
     const base = "px-3 py-1 rounded-full text-[11px] font-bold ";
-    if (s === 1) return base + "bg-green-50 text-green-700";
-    if (s === 2) return base + "bg-yellow-50 text-yellow-700";
-    return base + "bg-red-50 text-red-700";
+    if (s === 1) return base + "bg-green-100 text-green-700";
+    if (s === 2) return base + "bg-yellow-100 text-yellow-700";
+    return base + "bg-red-100 text-red-700";
   }
 }

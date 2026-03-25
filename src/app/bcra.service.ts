@@ -11,13 +11,9 @@ export class BcraService {
 
   // USA EL PREFIJO EXACTO QUE PUSIMOS EN EL PROXY (api-bcra)
   // IMPORTANTE: Sin barra al final
-  private readonly URL_BASE = '/api-bcra/centraldedeudores/v1.0/Deudas/Historicas';
+  private baseUrl = 'https://api.bcra.gob.ar/centraldedeudores/v1.0/Deudas';
 
   getDeudas(cuit: string): Observable<any> {
-    const cuitLimpio = cuit.trim();
-    // Esto garantiza: /api-bcra/centraldedeudores/v1.0/Deudas/Historicas/20281199537
-    const urlFinal = `${this.URL_BASE}/${cuitLimpio}`;
-    console.log('Llamando a:', urlFinal); // Verificá esto en la consola
-    return this.http.get(urlFinal);
+    return this.http.get(`${this.baseUrl}/Historicas/${cuit}`);
   }
 }

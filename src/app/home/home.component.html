@@ -1,182 +1,111 @@
-<div class="min-h-screen bg-gray-50 font-sans text-slate-900 antialiased p-4 md:p-8 lg:p-12">
+<main class="max-w-4xl mx-auto p-6">
 
-    <div class="max-w-6xl mx-auto mb-10">
-        <div class="flex flex-col md:flex-row justify-between items-center gap-6 mb-8">
-            <div>
-                <h1
-                    class="text-3xl md:text-4xl font-bold tracking-tigh flex gap-5 justify-center items-center text-slate-900">
-                    Auditoría <span class="text-[#ed1c24]"><img src="/assets/icon/logoGuerrini.png" class="w-48"
-                            alt=""></span>
-                </h1>
-                <p class="text-slate-600 font-medium flex gap-5 items-center text-xl mt-1">Consulta a Central de
-                    Deudores <span class="text-[#ed1c24]"><img src="/assets/icon/Logo-BCRA.svg" class="w-60"
-                            alt=""></span></p>
+    <section class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-8">
+        <h2 class="text-lg font-semibold mb-4 text-gray-700">Consulta Masiva BCRA</h2>
+
+        <div class="flex flex-col md:flex-row gap-4">
+            <div class="flex-1 relative">
+                <input type="text" [(ngModel)]="cuitBusqueda" (keydown.enter)="agregarConsulta()"
+                    placeholder="Pegue un CUIT y presione Enter"
+                    class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                    [disabled]="cargando()" />
+                @if (cargando()) {
+                <div class="absolute right-3 top-3.5">
+                    <div class="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                </div>
+                }
             </div>
 
-            <div
-                class="w-full md:w-auto flex items-center bg-white rounded-full shadow-sm border border-gray-100 p-1.5 focus-within:ring-2 focus-within:ring-[#ed1c24] transition-all">
-                <input type="text" [(ngModel)]="cuitBusqueda" placeholder="Ingrese CUIT..." maxlength="11"
-                    (keyup.enter)="buscarDeuda()"
-                    class="bg-transparent border-none outline-none px-6 py-3 w-full md:w-64 font-medium text-slate-800 placeholder:text-gray-400" />
-                <button (click)="buscarDeuda()" [disabled]="cargando()"
-                    class="bg-[#ed1c24] text-white px-8 py-3 rounded-full font-bold hover:bg-red-700 transition-colors disabled:opacity-60">
-                    {{ cargando() ? 'Buscando...' : 'Consultar' }}
-                </button>
-            </div>
+            <button (click)="toggleMostrar()" [disabled]="consultasAcumuladas().length === 0"
+                class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors disabled:bg-gray-300">
+                Mostrar Consultas ({{ consultasAcumuladas().length }})
+            </button>
         </div>
 
         @if (errorConsulta()) {
-        <div class="bg-red-50 text-red-700 px-6 py-4 rounded-2xl font-medium flex items-center gap-3">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-            </svg>
-            {{ errorConsulta() }}
-        </div>
+        <p class="mt-3 text-red-500 text-sm font-medium">⚠️ {{ errorConsulta() }}</p>
         }
-    </div>
+    </section>
 
-    @if (resultado(); as data) {
-    <div class="max-w-6xl mx-auto flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-
-        @if (estadoValidacion(); as validacion) {
-        <div [class]="validacion.rechazado ? 'bg-[#ed1c24] shadow-red-900/20' : 'bg-green-500 shadow-green-900/20'"
-            class="rounded-[2rem] p-8 md:p-12 text-white flex flex-col md:flex-row justify-between items-start md:items-center relative overflow-hidden shadow-lg transition-colors duration-500">
-
-            <div class="absolute -right-20 -top-40 w-96 h-96 bg-white opacity-10 rounded-full blur-3xl"></div>
-
-            <div class="z-10 mb-8 md:mb-0">
-                <p class="text-white/80 font-semibold mb-2 uppercase tracking-wider text-sm">Dictamen de Empresa</p>
-                <h2 class="text-4xl md:text-5xl font-bold tracking-tight mb-2">
-                    {{ data.results.denominacion }}
-                </h2>
-                <div class="flex gap-3 mt-4">
-                    <span class="bg-white/20 backdrop-blur-sm text-white px-4 py-1.5 rounded-full text-sm font-medium">
-                        CUIT: {{ data.results.identificacion }}
-                    </span>
+    @if (!mostrarDetalles() && consultasAcumuladas().length > 0) {
+    <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 animate-fade-in">
+        <p class="text-blue-800 text-sm mb-3 font-bold">Listos para procesar:</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            @for (item of consultasAcumuladas(); track item.cuit) {
+            <div class="bg-white px-3 py-2 rounded border border-blue-200 flex justify-between items-center shadow-sm">
+                <div class="overflow-hidden">
+                    <p class="text-[10px] text-gray-400 font-mono">{{ item.cuit }}</p>
+                    <p class="text-xs font-bold text-blue-700 truncate">{{ item.nombre }}</p>
                 </div>
+                <span class="text-green-500 text-xs font-bold">✓</span>
             </div>
-
-            <div class="z-10 bg-white rounded-3xl p-6 min-w-[180px] text-center shadow-xl">
-                <p class="text-slate-500 text-sm font-bold uppercase tracking-wider mb-1">Estado</p>
-                <p class="text-6xl font-black tracking-tight transition-colors duration-500"
-                    [class.text-[#ed1c24]]="validacion.rechazado" [class.text-green-500]="!validacion.rechazado">
-                    {{ validacion.rechazado ? 'NO' : 'OK' }}
-                </p>
-                <p class="text-xs font-semibold mt-2 transition-colors duration-500"
-                    [class.text-[#ed1c24]]="validacion.rechazado" [class.text-green-600]="!validacion.rechazado">
-                    {{ validacion.rechazado ? 'Supera Riesgo' : 'Perfil Apto' }}
-                </p>
-            </div>
+            }
         </div>
+    </div>
+    }
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    @if (mostrarDetalles()) {
+    <div class="space-y-6 animate-fade-in">
+        @for (item of consultasAcumuladas(); track item.cuit) {
+        <div class="bg-white rounded-xl shadow-md overflow-hidden border border-gray-200">
 
-            <div
-                class="bg-white rounded-[2rem] p-8 md:p-12 shadow-sm flex flex-col justify-between border border-gray-100">
+            <div class="p-4 bg-gray-50 border-b flex justify-between items-center">
                 <div>
-                    <h3 class="text-2xl font-bold text-slate-900 mb-8">Finanzas de la pyme</h3>
-
-                    <div class="bg-gray-50 rounded-3xl p-6 mb-4 flex justify-between items-center">
-                        <div>
-                            <p class="text-slate-500 text-sm font-medium mb-1">Compromiso Total</p>
-                            <p class="text-3xl font-bold text-slate-900">${{ validacion.total | number:'1.0-0' }}</p>
-                        </div>
-                        <div class="w-12 h-12 bg-white rounded-2xl shadow-sm flex items-center justify-center text-xl">
-                            📊
-                        </div>
-                    </div>
-
-                    <div class="rounded-3xl p-6 flex justify-between items-center transition-colors duration-500"
-                        [class]="validacion.malo > 0 ? 'bg-red-50' : 'bg-green-50'">
-                        <div>
-                            <p class="text-sm font-medium mb-1"
-                                [class]="validacion.malo > 0 ? 'text-red-700/70' : 'text-green-700/70'">
-                                Deuda Irregular (> Sit. 1)
-                            </p>
-                            <p class="text-3xl font-bold"
-                                [class]="validacion.malo > 0 ? 'text-[#ed1c24]' : 'text-green-600'">
-                                ${{ validacion.malo | number:'1.0-0' }}
-                            </p>
-                        </div>
-                        <div class="w-12 h-12 bg-white rounded-2xl shadow-sm flex items-center justify-center text-xl">
-                            {{ validacion.malo > 0 ? '⚠️' : '✅' }}
-                        </div>
-                    </div>
+                    <p class="text-xs text-gray-500 uppercase tracking-wider font-bold">{{ item.cuit }}</p>
+                    <h3 class="text-lg font-bold text-gray-800 uppercase">{{ item.nombre }}</h3>
                 </div>
 
-                <div class="mt-8 flex justify-between items-end border-t border-gray-100 pt-6">
-                    <div>
-                        <p class="text-slate-500 text-sm font-medium">Incidencia sobre el total</p>
-                        <p class="text-sm font-bold text-slate-400 mt-1">Límite permitido: 10%</p>
-                    </div>
-                    <p class="text-4xl font-black transition-colors duration-500"
-                        [class.text-[#ed1c24]]="validacion.rechazado" [class.text-green-500]="!validacion.rechazado">
-                        {{ validacion.porcentajeMalo | number:'1.0-1' }}%
-                    </p>
+                @if (item.analisis) {
+                <div [class]="item.analisis.rechazado ? 'text-red-600' : 'text-green-600'" class="text-right">
+                    <p class="text-[10px] font-bold uppercase">Estado Riesgo</p>
+                    <p class="font-black">{{ item.analisis.rechazado ? 'RECHAZADO' : 'APROBADO' }}</p>
                 </div>
+                }
             </div>
 
-            <div class="bg-slate-900 rounded-[2rem] p-8 md:p-12 shadow-sm text-white flex flex-col h-[500px]">
-                <div class="flex justify-between items-center mb-8">
-                    <h3 class="text-2xl font-bold">Detalle de Entidades</h3>
-                    <span class="bg-white/10 text-white text-xs font-semibold px-4 py-2 rounded-full">
-                        Último Periodo
-                    </span>
+            <div class="p-4">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div class="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                        <p class="text-[10px] text-gray-500 uppercase font-bold">Deuda Total</p>
+                        <p class="text-lg font-bold text-gray-700">${{ item.analisis?.total?.toLocaleString() }}</p>
+                    </div>
+                    <div class="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                        <p class="text-[10px] text-gray-500 uppercase font-bold">Sit. Irregular</p>
+                        <p class="text-lg font-bold text-red-500">${{ item.analisis?.malo?.toLocaleString() }}</p>
+                    </div>
                 </div>
 
-                <div class="overflow-y-auto pr-2 space-y-3 custom-scrollbar">
-                    @for (ent of data.results.periodos[0].entidades; track $index) {
-                    <div
-                        class="bg-white/5 hover:bg-white/10 transition-colors rounded-2xl p-5 flex justify-between items-center">
-                        <div class="flex items-center gap-4">
-                            <div
-                                class="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-400">
-                                {{ ent.entidad | slice:0:2 }}
-                            </div>
-                            <div>
-                                <p class="font-bold text-base truncate max-w-[140px] md:max-w-[200px]">{{ ent.entidad }}
-                                </p>
-                                <p class="text-slate-400 text-xs mt-1">SITUACIÓN {{ ent.situacion }}</p>
-                            </div>
-                        </div>
-                        <div class="text-right">
-                            <p class="font-bold text-lg">${{ ent.monto | number:'1.0-0' }}</p>
-                            @if (ent.situacion > 1) {
-                            <span
-                                class="inline-block mt-1 bg-[#ed1c24]/20 text-red-400 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                ALERTA
-                            </span>
-                            } @else {
-                            <span
-                                class="inline-block mt-1 bg-green-500/20 text-green-400 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                NORMAL
-                            </span>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead>
+                            <tr class="text-gray-400 border-b text-[11px] uppercase tracking-tighter">
+                                <th class="py-2 font-bold">Entidad Bancaria</th>
+                                <th class="py-2 font-bold text-center">Período</th>
+                                <th class="py-2 font-bold text-center">Estado</th>
+                                <th class="py-2 font-bold text-right">Monto</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (entidad of item.data.results.periodos[0]?.entidades; track entidad.entidad) {
+                            <tr class="border-b last:border-0 hover:bg-gray-50">
+                                <td class="py-3 font-semibold text-gray-700 uppercase">{{ entidad.entidad }}</td>
+                                <td class="py-3 text-center text-gray-500 font-mono">{{
+                                    formatPeriodo(item.data.results.periodos[0].periodo) }}</td>
+                                <td class="py-3 text-center">
+                                    <span [class]="getSituacionClass(entidad.situacion)">
+                                        SIT {{ entidad.situacion }}
+                                    </span>
+                                </td>
+                                <td class="py-3 text-right font-mono font-bold text-gray-600">${{
+                                    entidad.monto?.toLocaleString() }}</td>
+                            </tr>
                             }
-                        </div>
-                    </div>
-                    }
+                        </tbody>
+                    </table>
                 </div>
             </div>
-
         </div>
         }
     </div>
     }
-
-</div>
-
-<style>
-    .custom-scrollbar::-webkit-scrollbar {
-        width: 6px;
-    }
-
-    .custom-scrollbar::-webkit-scrollbar-track {
-        background: transparent;
-    }
-
-    .custom-scrollbar::-webkit-scrollbar-thumb {
-        background-color: rgba(255, 255, 255, 0.1);
-        border-radius: 20px;
-    }
-</style>
+</main>
