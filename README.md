@@ -1,59 +1,54 @@
-# BcraGuerrini
+# BCRA-GUERRINI
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 20.3.1.
+Este proyecto ha sido desarrollado utilizando **Angular 21** y **Git** como sistema de control de versiones. 
 
-## Development server
+---
 
-To start a local development server, run:
+## 📝 Descripción del Proyecto
+Este proyecto es una aplicación web moderna (ej. Landing Page para Asistéril) desarrollada con Angular, enfocada en la eficiencia y la escalabilidad de componentes.
+
+---
+
+## 🚀 Instalación
+
+Una vez que hayas descargado o clonado el repositorio mediante **Git**, es necesario instalar las dependencias del proyecto que se encuentran definidas en el archivo `package.json`.
+
+Para generar la carpeta `node_modules`, ejecuta el siguiente comando en tu terminal:
 
 ```bash
-ng serve
+npm install
+
 ```
+## Servidor de desarrollo
 
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
-
-## Code scaffolding
-
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
+Para levantar la aplicación en un entorno local, es obligatorio utilizar la configuración de proxy definida para que las peticiones a la API funcionen correctamente:
 
 ```bash
-ng generate component component-name
-```
+ng serve --proxy-config proxy.conf.json
 
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+ ```
 
-```bash
-ng generate --help
-```
+## Acceso Remoto o Red Local
 
-## Building
-
-To build the project run:
+Si necesitás levantar el proyecto y que sea accesible desde otro dispositivo en la misma red (o simplemente especificar un puerto diferente), podés utilizar el siguiente comando:
 
 ```bash
+ng serve --proxy-config proxy.conf.json --host 0.0.0.0 --port 3030
+
+ ```
+
+ ## 🛠 Build
+ Para generar los archivos de producción listos para el despliegue (se guardarán en la carpeta dist/):
+
+ ```bash
 ng build
-```
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
+ ```
 
-## Running unit tests
+## 🎨 Componentes de UI y Estilos
 
-To execute unit tests with the [Karma](https://karma-runner.github.io) test runner, use the following command:
+Este proyecto utiliza Angular Material para componentes interactivos clave y Tailwind CSS para un estilizado basado en utilidades, asegurando una estética consistente y moderna.
 
-```bash
-ng test
-```
+>Configuración de Tailwind: Los temas personalizados y colores de marca para Asistéril están definidos en tailwind.config.js.
 
-## Running end-to-end tests
-
-For end-to-end (e2e) testing, run:
-
-```bash
-ng e2e
-```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+>Temas de Material: Integrados mediante @angular/material para patrones de UI accesibles y de alta calidad.
