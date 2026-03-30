@@ -1,182 +1,218 @@
-<div class="min-h-screen bg-gray-50 font-sans text-slate-900 antialiased p-4 md:p-8 lg:p-12">
+<main class="max-w-4xl mx-auto p-6">
+    <section class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-8">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-semibold text-gray-700">Consulta Central de Deudores + Cheques</h2>
+            <img src="/assets/icon/Logo-BCRA.svg" alt="" width="120px">
+        </div>
+        <div class="flex flex-col md:flex-row gap-4">
+            <div class="flex-1 relative flex items-center">
+                <input type="text" [(ngModel)]="cuitBusqueda" (keydown.enter)="agregarConsulta()"
+                    placeholder="Pegue un CUIT y presione Enter"
+                    class="w-full pl-4 pr-12 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
+                    [disabled]="cargando()" />
 
-    <div class="max-w-6xl mx-auto mb-10">
-        <div class="flex flex-col md:flex-row justify-between items-center gap-6 mb-8">
-            <div>
-                <h1
-                    class="text-3xl md:text-4xl font-bold tracking-tigh flex gap-5 justify-center items-center text-slate-900">
-                    Auditoría <span class="text-[#ed1c24]"><img src="/assets/icon/logoGuerrini.png" class="w-48"
-                            alt=""></span>
-                </h1>
-                <p class="text-slate-600 font-medium flex gap-5 items-center text-xl mt-1">Consulta a Central de
-                    Deudores <span class="text-[#ed1c24]"><img src="/assets/icon/Logo-BCRA.svg" class="w-60"
-                            alt=""></span></p>
-            </div>
+                <button (click)="agregarConsulta()" [disabled]="cargando() || !cuitBusqueda"
+                    class="absolute right-1 top-1 bottom-1 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-md flex items-center justify-center transition-colors disabled:bg-gray-200 disabled:text-gray-400">
 
-            <div
-                class="w-full md:w-auto flex items-center bg-white rounded-full shadow-sm border border-gray-100 p-1.5 focus-within:ring-2 focus-within:ring-[#ed1c24] transition-all">
-                <input type="text" [(ngModel)]="cuitBusqueda" placeholder="Ingrese CUIT..." maxlength="11"
-                    (keyup.enter)="buscarDeuda()"
-                    class="bg-transparent border-none outline-none px-6 py-3 w-full md:w-64 font-medium text-slate-800 placeholder:text-gray-400" />
-                <button (click)="buscarDeuda()" [disabled]="cargando()"
-                    class="bg-[#ed1c24] text-white px-8 py-3 rounded-full font-bold hover:bg-red-700 transition-colors disabled:opacity-60">
-                    {{ cargando() ? 'Buscando...' : 'Consultar' }}
+                    @if (cargando()) {
+                    <div class="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+                    } @else {
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                    }
                 </button>
             </div>
-        </div>
 
-        @if (errorConsulta()) {
-        <div class="bg-red-50 text-red-700 px-6 py-4 rounded-2xl font-medium flex items-center gap-3">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-            </svg>
-            {{ errorConsulta() }}
+            <button (click)="toggleMostrar()" [disabled]="consultasAcumuladas().length === 0"
+                class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-6 py-3 rounded-lg font-bold transition-colors disabled:bg-gray-100 disabled:text-gray-400">
+                Ver Consultas ({{ consultasAcumuladas().length }})
+            </button>
+        </div>
+        @if (errorConsulta()) { <p class="mt-3 text-red-500 text-sm italic">⚠️ {{ errorConsulta() }}</p> }
+    </section>
+
+    @if (!mostrarDetalles() && consultasAcumuladas().length > 0) {
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 animate-fade-in">
+        @for (item of consultasAcumuladas(); track item.cuit) {
+        <div class="bg-white p-3 rounded-lg border border-blue-200 flex justify-between items-center shadow-sm">
+            <div class="overflow-hidden">
+                <p class="text-[9px] text-gray-400 font-mono">{{ item.cuit }}</p>
+                <p class="text-xs font-bold text-blue-700 truncate">{{ item.nombre }}</p>
+            </div>
+            <button (click)="eliminarConsulta(item.cuit)" class="text-gray-300 hover:text-red-500">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+            </button>
         </div>
         }
     </div>
+    }
 
-    @if (resultado(); as data) {
-    <div class="max-w-6xl mx-auto flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    @if (mostrarDetalles()) {
+    <div class="space-y-4 animate-fade-in">
+        <button (click)="mostrarDetalles.set(false)"
+            class="text-blue-600 text-xs font-bold mb-2 flex items-center gap-1">
+            ← Volver a la lista
+        </button>
 
-        @if (estadoValidacion(); as validacion) {
-        <div [class]="validacion.rechazado ? 'bg-[#ed1c24] shadow-red-900/20' : 'bg-green-500 shadow-green-900/20'"
-            class="rounded-[2rem] p-8 md:p-12 text-white flex flex-col md:flex-row justify-between items-start md:items-center relative overflow-hidden shadow-lg transition-colors duration-500">
+        @for (item of consultasAcumuladas(); track item.cuit; let i = $index) {
+        <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
 
-            <div class="absolute -right-20 -top-40 w-96 h-96 bg-white opacity-10 rounded-full blur-3xl"></div>
+            <div (click)="toggleAccordion(i)"
+                class="p-4 bg-gray-50 flex justify-between items-center cursor-pointer border-b hover:bg-gray-100 transition-colors">
 
-            <div class="z-10 mb-8 md:mb-0">
-                <p class="text-white/80 font-semibold mb-2 uppercase tracking-wider text-sm">Dictamen de Empresa</p>
-                <h2 class="text-4xl md:text-5xl font-bold tracking-tight mb-2">
-                    {{ data.results.denominacion }}
-                </h2>
-                <div class="flex gap-3 mt-4">
-                    <span class="bg-white/20 backdrop-blur-sm text-white px-4 py-1.5 rounded-full text-sm font-medium">
-                        CUIT: {{ data.results.identificacion }}
-                    </span>
-                </div>
-            </div>
-
-            <div class="z-10 bg-white rounded-3xl p-6 min-w-[180px] text-center shadow-xl">
-                <p class="text-slate-500 text-sm font-bold uppercase tracking-wider mb-1">Estado</p>
-                <p class="text-6xl font-black tracking-tight transition-colors duration-500"
-                    [class.text-[#ed1c24]]="validacion.rechazado" [class.text-green-500]="!validacion.rechazado">
-                    {{ validacion.rechazado ? 'NO' : 'OK' }}
-                </p>
-                <p class="text-xs font-semibold mt-2 transition-colors duration-500"
-                    [class.text-[#ed1c24]]="validacion.rechazado" [class.text-green-600]="!validacion.rechazado">
-                    {{ validacion.rechazado ? 'Supera Riesgo' : 'Perfil Apto' }}
-                </p>
-            </div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-            <div
-                class="bg-white rounded-[2rem] p-8 md:p-12 shadow-sm flex flex-col justify-between border border-gray-100">
-                <div>
-                    <h3 class="text-2xl font-bold text-slate-900 mb-8">Finanzas de la pyme</h3>
-
-                    <div class="bg-gray-50 rounded-3xl p-6 mb-4 flex justify-between items-center">
-                        <div>
-                            <p class="text-slate-500 text-sm font-medium mb-1">Compromiso Total</p>
-                            <p class="text-3xl font-bold text-slate-900">${{ validacion.total | number:'1.0-0' }}</p>
-                        </div>
-                        <div class="w-12 h-12 bg-white rounded-2xl shadow-sm flex items-center justify-center text-xl">
-                            📊
-                        </div>
-                    </div>
-
-                    <div class="rounded-3xl p-6 flex justify-between items-center transition-colors duration-500"
-                        [class]="validacion.malo > 0 ? 'bg-red-50' : 'bg-green-50'">
-                        <div>
-                            <p class="text-sm font-medium mb-1"
-                                [class]="validacion.malo > 0 ? 'text-red-700/70' : 'text-green-700/70'">
-                                Deuda Irregular (> Sit. 1)
-                            </p>
-                            <p class="text-3xl font-bold"
-                                [class]="validacion.malo > 0 ? 'text-[#ed1c24]' : 'text-green-600'">
-                                ${{ validacion.malo | number:'1.0-0' }}
-                            </p>
-                        </div>
-                        <div class="w-12 h-12 bg-white rounded-2xl shadow-sm flex items-center justify-center text-xl">
-                            {{ validacion.malo > 0 ? '⚠️' : '✅' }}
-                        </div>
-                    </div>
-                </div>
-
-                <div class="mt-8 flex justify-between items-end border-t border-gray-100 pt-6">
+                <div class="flex items-center gap-3">
+                    <div [class]="item.analisis?.rechazado ? 'bg-red-500' : 'bg-green-500'"
+                        class="w-3 h-3 rounded-full"></div>
                     <div>
-                        <p class="text-slate-500 text-sm font-medium">Incidencia sobre el total</p>
-                        <p class="text-sm font-bold text-slate-400 mt-1">Límite permitido: 10%</p>
+                        <p class="text-[10px] text-gray-500 font-mono">{{ item.cuit }}</p>
+                        <h3 class="font-bold text-gray-800 uppercase text-sm">{{ item.nombre }}</h3>
                     </div>
-                    <p class="text-4xl font-black transition-colors duration-500"
-                        [class.text-[#ed1c24]]="validacion.rechazado" [class.text-green-500]="!validacion.rechazado">
-                        {{ validacion.porcentajeMalo | number:'1.0-1' }}%
-                    </p>
+                </div>
+
+                <div class="flex items-center gap-4">
+                    <span [class]="item.analisis?.rechazado ? 'bg-red-600' : 'bg-green-600'"
+                        class="px-2 py-0.5 rounded text-[10px] font-black text-white uppercase tracking-wider">
+                        {{ item.analisis?.rechazado ? 'Rechazado' : 'Viable' }}
+                    </span>
+
+                    <button (click)="$event.stopImmediatePropagation(); eliminarConsulta(item.cuit)"
+                        class="text-red-500 hover:text-red-500 transition-colors p-1" title="Eliminar consulta">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                            stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </button>
+
+                    <svg xmlns="http://www.w3.org/2000/svg" [class.rotate-180]="item.abierto"
+                        class="h-4 w-4 text-gray-400 transition-transform" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                    </svg>
                 </div>
             </div>
 
-            <div class="bg-slate-900 rounded-[2rem] p-8 md:p-12 shadow-sm text-white flex flex-col h-[500px]">
-                <div class="flex justify-between items-center mb-8">
-                    <h3 class="text-2xl font-bold">Detalle de Entidades</h3>
-                    <span class="bg-white/10 text-white text-xs font-semibold px-4 py-2 rounded-full">
-                        Último Periodo
-                    </span>
-                </div>
-
-                <div class="overflow-y-auto pr-2 space-y-3 custom-scrollbar">
-                    @for (ent of data.results.periodos[0].entidades; track $index) {
-                    <div
-                        class="bg-white/5 hover:bg-white/10 transition-colors rounded-2xl p-5 flex justify-between items-center">
-                        <div class="flex items-center gap-4">
-                            <div
-                                class="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-400">
-                                {{ ent.entidad | slice:0:2 }}
+            @if (item.abierto) {
+            <div class="p-4 bg-white animate-fade-in">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <h4 class="text-[10px] font-black text-gray-400 uppercase mb-2">Resumen de Deuda</h4>
+                        <div class="grid grid-cols-2 gap-2 mb-4">
+                            <div class="bg-blue-50/50 p-2 rounded border border-blue-100">
+                                <p class="text-[8px] text-blue-400 font-bold uppercase">Total</p>
+                                <p class="text-sm font-bold text-blue-900">${{
+                                    item.analisis?.totalDeuda?.toLocaleString() }}</p>
                             </div>
-                            <div>
-                                <p class="font-bold text-base truncate max-w-[140px] md:max-w-[200px]">{{ ent.entidad }}
-                                </p>
-                                <p class="text-slate-400 text-xs mt-1">SITUACIÓN {{ ent.situacion }}</p>
+                            <div class="bg-red-50/50 p-2 rounded border border-red-100">
+                                <p class="text-[8px] text-red-400 font-bold uppercase">Irregular</p>
+                                <p class="text-sm font-bold text-red-600">${{ item.analisis?.maloDeuda?.toLocaleString()
+                                    }}</p>
                             </div>
                         </div>
-                        <div class="text-right">
-                            <p class="font-bold text-lg">${{ ent.monto | number:'1.0-0' }}</p>
-                            @if (ent.situacion > 1) {
-                            <span
-                                class="inline-block mt-1 bg-[#ed1c24]/20 text-red-400 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                ALERTA
-                            </span>
-                            } @else {
-                            <span
-                                class="inline-block mt-1 bg-green-500/20 text-green-400 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                NORMAL
-                            </span>
+
+                        <table class="w-full text-[11px]">
+                            <tbody class="divide-y divide-gray-50">
+                                @for (ent of item.dataDeuda.results.periodos[0]?.entidades; track ent.entidad) {
+                                <tr>
+                                    <td class="py-1.5 font-medium text-gray-700">{{ ent.entidad }}</td>
+                                    <td class="py-1.5 text-center">
+                                        <span [class]="getSituacionClass(ent.situacion)">{{ ent.situacion }}</span>
+                                    </td>
+                                    <td class="py-1.5 text-right font-mono text-gray-500">${{
+                                        ((ent.monto)* 1000).toLocaleString() }}</td>
+                                </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="border-t md:border-t-0 md:border-l md:pl-6 pt-4 md:pt-0">
+                        <h4 class="text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">Estado de
+                            Cheques</h4>
+
+                        <div class="grid grid-cols-2 gap-2 mb-4">
+                            <div class="bg-gray-50 p-2 rounded border border-gray-100">
+                                <p class="text-[8px] text-gray-400 font-bold uppercase">Cant. Rechazos</p>
+                                <p class="text-sm font-bold text-gray-700">{{ item.analisis?.cantidadChequesSinFondo ||
+                                    0 }}</p>
+                            </div>
+                            <div [class]="item.analisis?.cantidadChequesSinFondo ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-100'"
+                                class="p-2 rounded border">
+                                <p [class]="item.analisis?.cantidadChequesSinFondo ? 'text-red-400' : 'text-gray-400'"
+                                    class="text-[8px] font-bold uppercase">Monto Total</p>
+                                <p [class]="item.analisis?.cantidadChequesSinFondo ? 'text-red-700' : 'text-gray-700'"
+                                    class="text-sm font-bold">
+                                    ${{ (item.analisis?.montoTotalChequesSinFondo || 0).toLocaleString() }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="border rounded-lg overflow-hidden border-gray-100">
+                            <button (click)="toggleCheques(i, $event)"
+                                class="w-full flex justify-between items-center p-3 text-left transition-colors"
+                                [class]="item.analisis?.tieneChequesSinFondoRecientes ? 'bg-red-50 hover:bg-red-100' : 'bg-gray-50 hover:bg-gray-100'">
+
+                                <div class="flex items-center gap-2">
+                                    <span class="text-lg">{{ item.analisis?.tieneChequesSinFondoRecientes ? '⚠️' : '✅'
+                                        }}</span>
+                                    <div>
+                                        <p class="text-[10px] font-bold text-gray-700 uppercase">Sin fondos / No pagos
+                                        </p>
+                                        <p class="text-[9px] text-gray-500">Click para ver detalle</p>
+                                    </div>
+                                </div>
+                                <svg xmlns="http://www.w3.org/2000/svg" [class.rotate-180]="item.chequesAbierto"
+                                    class="h-3 w-3 text-gray-400 transition-transform" fill="none" viewBox="0 0 24 24"
+                                    stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </button>
+
+                            @if (item.chequesAbierto) {
+                            <div class="p-3 bg-white border-t border-gray-100 animate-fade-in max-h-60 overflow-y-auto">
+                                @if (item.analisis?.cantidadChequesSinFondo! > 0) {
+                                @for (causal of item.dataCheques.results.causales; track causal.causal) {
+                                @if (causal.causal === 'SIN FONDOS') {
+                                @for (entidad of causal.entidades; track entidad.entidad) {
+                                @for (det of entidad.detalle; track det.fechaRechazo) {
+                                @if (det.fechaPago === null) {
+                                <div
+                                    class="flex justify-between items-center text-[10px] border-b border-gray-50 py-2 last:border-0">
+                                    <div class="flex flex-col">
+                                        <span class="text-gray-800 font-bold">{{ entidad.entidad }}</span>
+                                        <span class="text-gray-400 font-mono">Rechazo: {{ det.fechaRechazo |
+                                            date:'dd/MM/yy' }}</span>
+                                    </div>
+                                    <span class="font-black text-red-600 bg-red-50 px-2 py-1 rounded">
+                                        $ {{ det.monto?.toLocaleString() }}
+                                    </span>
+                                </div>
+                                }
+                                }
+                                }
+                                }
+                                }
+                                } @else {
+                                <div class="py-4 text-center italic text-[10px] text-gray-400">
+                                    No se registran deudas por cheques
+                                </div>
+                                }
+                            </div>
                             }
                         </div>
                     </div>
-                    }
                 </div>
             </div>
-
+            }
         </div>
         }
     </div>
     }
-
-</div>
-
-<style>
-    .custom-scrollbar::-webkit-scrollbar {
-        width: 6px;
-    }
-
-    .custom-scrollbar::-webkit-scrollbar-track {
-        background: transparent;
-    }
-
-    .custom-scrollbar::-webkit-scrollbar-thumb {
-        background-color: rgba(255, 255, 255, 0.1);
-        border-radius: 20px;
-    }
-</style>
+</main>
