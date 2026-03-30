@@ -61,21 +61,28 @@ export class HomeComponent {
   }
 
   agregarConsulta() {
-    const cuit = this.cuitBusqueda.trim();
-    if (!cuit || cuit.length < 11) return;
+    // 1. "Limpiamos" el valor: eliminamos guiones y cualquier cosa que no sea número
+    const cuitLimpio = this.cuitBusqueda.replace(/\D/g, '');
 
-    if (this.consultasAcumuladas().some(c => c.cuit === cuit)) {
-      this.errorConsulta.set(`El CUIT ${cuit} ya está en la lista.`);
+    // 2. Validamos la longitud sobre el CUIT ya limpio
+    if (!cuitLimpio || cuitLimpio.length < 11) {
+      this.errorConsulta.set("El CUIT debe tener 11 dígitos.");
+      return;
+    }
+
+    // 3. Verificamos duplicados con el CUIT limpio
+    if (this.consultasAcumuladas().some(c => c.cuit === cuitLimpio)) {
+      this.errorConsulta.set(`El CUIT ${cuitLimpio} ya está en la lista.`);
       return;
     }
 
     this.cargando.set(true);
     this.errorConsulta.set(null);
 
-
+    // 4. Usamos 'cuitLimpio' para las llamadas al servicio
     forkJoin({
-      deuda: this.bcraSvc.getDeudas(cuit).pipe(catchError(() => of(null))),
-      cheques: this.bcraSvc.getChequesRechazados(cuit).pipe(catchError(() => of(null)))
+      deuda: this.bcraSvc.getDeudas(cuitLimpio).pipe(catchError(() => of(null))),
+      cheques: this.bcraSvc.getChequesRechazados(cuitLimpio).pipe(catchError(() => of(null)))
     })
       .pipe(delay(500))
       .subscribe({
@@ -84,20 +91,24 @@ export class HomeComponent {
             const analisis = this.procesarRiesgoCompleto(res.deuda, res.cheques);
             const nombrePersona = res.deuda.results.denominacion || 'Nombre no disponible';
 
-            this.consultasAcumuladas.update(prev => [...prev, {
-              cuit: cuit,
+            this.consultasAcumuladas.update(prev => [{
+              cuit: cuitLimpio, // Guardamos la versión limpia
               nombre: nombrePersona,
               dataDeuda: res.deuda,
               dataCheques: res.cheques,
               analisis: analisis
-            }]);
+            },
+            //TODO: ESTE ...prev si lo ponemos antes, la ultima consulta queda al final, si lo ponemos aca queda en primer lugar
+            ...prev
+            ]);
 
-            this.cuitBusqueda = '';
+            this.cuitBusqueda = ''; // Limpiamos el input
+
           } else {
-            this.errorConsulta.set(`El CUIT ${cuit} ya fue consultado, espere un momento.`);
+            this.errorConsulta.set(`No se encontraron datos para el CUIT ${cuitLimpio}.`);
           }
           this.cargando.set(false);
-        }
+        },
       });
   }
 
