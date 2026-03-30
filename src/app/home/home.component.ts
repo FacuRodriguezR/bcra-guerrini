@@ -10,19 +10,23 @@ interface ConsultaCuit {
   nombre: string;
   dataDeuda: any;
   dataCheques: any;
+  abierto?: boolean
+  chequesAbierto?: boolean,
   analisis: {
     totalDeuda: number;
     maloDeuda: number;
     tieneChequesSinFondoRecientes: boolean;
     motivoRechazo: string | null;
     rechazado: boolean;
+    cantidadChequesSinFondo: number;
+    montoTotalChequesSinFondo: number;
   } | null;
 }
 
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [CommonModule, FormsModule, HeaderComponent],
+  imports: [CommonModule, FormsModule],
   templateUrl: './home.component.html',
   styleUrl: './home.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -36,6 +40,26 @@ export class HomeComponent {
   consultasAcumuladas = signal<ConsultaCuit[]>([]);
   mostrarDetalles = signal<boolean>(false);
 
+  // En home.component.ts
+  toggleAccordion(index: number) {
+    this.consultasAcumuladas.update(consultas => {
+      const nuevas = [...consultas];
+      // Cerramos los demás para que sea un accordion verdadero (opcional)
+      nuevas.forEach((c, i) => { if (i !== index) c.abierto = false; });
+      nuevas[index].abierto = !nuevas[index].abierto;
+      return nuevas;
+    });
+  }
+
+  toggleCheques(index: number, event: Event) {
+    event.stopPropagation(); // Evitamos que el click dispare el acordeón principal
+    this.consultasAcumuladas.update(consultas => {
+      const nuevas = [...consultas];
+      nuevas[index].chequesAbierto = !nuevas[index].chequesAbierto;
+      return nuevas;
+    });
+  }
+
   agregarConsulta() {
     const cuit = this.cuitBusqueda.trim();
     if (!cuit || cuit.length < 11) return;
@@ -48,7 +72,7 @@ export class HomeComponent {
     this.cargando.set(true);
     this.errorConsulta.set(null);
 
-    // Consultamos ambas APIs en paralelo
+
     forkJoin({
       deuda: this.bcraSvc.getDeudas(cuit).pipe(catchError(() => of(null))),
       cheques: this.bcraSvc.getChequesRechazados(cuit).pipe(catchError(() => of(null)))
@@ -70,7 +94,7 @@ export class HomeComponent {
 
             this.cuitBusqueda = '';
           } else {
-            this.errorConsulta.set(`El CUIT ${cuit} no tiene registros en Deudas.`);
+            this.errorConsulta.set(`El CUIT ${cuit} ya fue consultado, espere un momento.`);
           }
           this.cargando.set(false);
         }
@@ -78,17 +102,29 @@ export class HomeComponent {
   }
 
   private procesarRiesgoCompleto(deuda: any, cheques: any) {
-    // 1. Validar Cheques Sin Fondo en los últimos 6 meses
+    // Variables para el análisis de cheques
     let tieneChequesSinFondoRecientes = false;
+    let cantidadChequesSinFondo = 0;
+    let montoTotalChequesSinFondo = 0;
+
     const seisMesesAtras = new Date();
     seisMesesAtras.setMonth(seisMesesAtras.getMonth() - 6);
 
+    // 1. Procesamiento de Cheques (Causal: SIN FONDOS)
     if (cheques?.results?.causales) {
       const sinFondos = cheques.results.causales.find((c: any) => c.causal === "SIN FONDOS");
 
       if (sinFondos) {
         sinFondos.entidades.forEach((ent: any) => {
-          ent.detalle.forEach((det: any) => {
+          // Filtramos los detalles para quedarnos solo con los que no tienen fecha de pago
+          const chequesSinPago = ent.detalle.filter((det: any) => det.fechaPago === null);
+
+          chequesSinPago.forEach((det: any) => {
+            // 1. Sumamos solo si el cheque sigue impago
+            cantidadChequesSinFondo++;
+            montoTotalChequesSinFondo += (det.monto || 0);
+
+            // 2. Verificamos si este rechazo impago es reciente (últimos 6 meses)
             const fechaRechazo = new Date(det.fechaRechazo);
             if (fechaRechazo >= seisMesesAtras) {
               tieneChequesSinFondoRecientes = true;
@@ -98,31 +134,37 @@ export class HomeComponent {
       }
     }
 
-    // 2. Validar Deuda Histórica
-    const entidades = deuda.results.periodos[0]?.entidades || [];
-    const totalDeuda = entidades.reduce((acc: number, e: any) => acc + (e.monto || 0), 0);
+    // 2. Procesamiento de Deuda Bancaria
+    // Tomamos el periodo más reciente (índice 0)
+    const periodoReciente = deuda.results.periodos[0];
+    const entidades = periodoReciente?.entidades || [];
+
+    const totalDeuda = entidades.reduce((acc: number, e: any) => acc + (e.monto || 0), 0) * 1000;
     const deudaMala = entidades
-      .filter((e: any) => e.situacion > 1)
-      .reduce((acc: number, e: any) => acc + (e.monto || 0), 0);
+      .filter((e: any) => e.situacion > 2)
+      .reduce((acc: number, e: any) => acc + (e.monto || 0), 0) * 1000;
 
     const porcentajeMalo = totalDeuda > 0 ? (deudaMala * 100) / totalDeuda : 0;
 
-    // Lógica de rechazo combinada
+    // 3. Lógica de Decisión (Scoring)
     let rechazado = false;
     let motivo = null;
 
     if (tieneChequesSinFondoRecientes) {
       rechazado = true;
-      motivo = "Cheques sin fondo en los últimos 6 meses";
+      motivo = `Cheques sin fondo recientes (${cantidadChequesSinFondo} en total)`;
     } else if (porcentajeMalo > 10) {
       rechazado = true;
-      motivo = "Exceso de deuda en situación irregular (>10%)";
+      motivo = `Exceso de deuda irregular: ${porcentajeMalo.toFixed(1)}% (Situación > 2)`;
     }
 
+    // 4. Retorno del objeto de análisis
     return {
       totalDeuda: totalDeuda,
       maloDeuda: deudaMala,
       tieneChequesSinFondoRecientes,
+      cantidadChequesSinFondo,       // Cantidad total de cheques "SIN FONDOS"
+      montoTotalChequesSinFondo,      // Suma total de montos de esos cheques
       motivoRechazo: motivo,
       rechazado: rechazado
     };
