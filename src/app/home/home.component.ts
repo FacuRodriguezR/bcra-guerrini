@@ -60,96 +60,140 @@ export class HomeComponent {
     });
   }
 
-  agregarConsulta() {
-    // 1. "Limpiamos" el valor: eliminamos guiones y cualquier cosa que no sea número
+  obtenerConsulta() {
+    const cuitLimpio = this.cuitBusqueda.replace(/\D/g, '');
+    if (cuitLimpio) {
+
+      this.bcraSvc.getDeudas(cuitLimpio).subscribe(
+        data => {
+          console.log('dataLucas', data)
+        }
+      )
+    }
+  }
+
+
+  agregarConsulta(inputElement?: HTMLInputElement) {
     const cuitLimpio = this.cuitBusqueda.replace(/\D/g, '');
 
-    // 2. Validamos la longitud sobre el CUIT ya limpio
-    if (!cuitLimpio || cuitLimpio.length < 11) {
+    // 1. Validaciones iniciales
+    if (!cuitLimpio || cuitLimpio.length !== 11) {
       this.errorConsulta.set("El CUIT debe tener 11 dígitos.");
+      inputElement?.focus();
       return;
     }
 
-    // 3. Verificamos duplicados con el CUIT limpio
+    if (!this.validarAlgoritmoCuit(cuitLimpio)) {
+      this.errorConsulta.set("CUIT inválido (dígito verificador).");
+      inputElement?.focus();
+      return;
+    }
+
     if (this.consultasAcumuladas().some(c => c.cuit === cuitLimpio)) {
-      this.errorConsulta.set(`El CUIT ${cuitLimpio} ya está en la lista.`);
+      this.errorConsulta.set(`El CUIT ${cuitLimpio} ya fue consultado.`);
+      this.cuitBusqueda = ''; // Limpiamos para el siguiente
+      inputElement?.focus();
       return;
     }
 
+    // 2. Estado de carga
     this.cargando.set(true);
     this.errorConsulta.set(null);
 
-    // 4. Usamos 'cuitLimpio' para las llamadas al servicio
-    forkJoin({
-      deuda: this.bcraSvc.getDeudas(cuitLimpio).pipe(catchError(() => of(null))),
-      cheques: this.bcraSvc.getChequesRechazados(cuitLimpio).pipe(catchError(() => of(null)))
-    })
-      .pipe(delay(500))
-      .subscribe({
-        next: (res) => {
-          if (res.deuda && res.deuda.results) {
-            const analisis = this.procesarRiesgoCompleto(res.deuda, res.cheques);
-            const nombrePersona = res.deuda.results.denominacion || 'Nombre no disponible';
+    // 3. Petición al servicio
+    this.bcraSvc.getDeudas(cuitLimpio).pipe(
+      delay(500),
+      catchError((err) => {
+        const msg = err.error?.error || "Error de conexión con el servidor.";
+        this.errorConsulta.set(msg);
+        this.cargando.set(false);
 
-            this.consultasAcumuladas.update(prev => [{
-              cuit: cuitLimpio, // Guardamos la versión limpia
-              nombre: nombrePersona,
-              dataDeuda: res.deuda,
-              dataCheques: res.cheques,
-              analisis: analisis
-            },
-            //TODO: ESTE ...prev si lo ponemos antes, la ultima consulta queda al final, si lo ponemos aca queda en primer lugar
-            ...prev
-            ]);
+        // Devolvemos el foco incluso si falla la red
+        setTimeout(() => inputElement?.focus(), 0);
+        return of(null);
+      })
+    ).subscribe(res => {
+      if (!res) return;
 
-            this.cuitBusqueda = ''; // Limpiamos el input
+      if (res && res.results) {
+        const data = res.results;
+        const analisis = this.procesarRiesgoCompleto(data);
 
-          } else {
-            this.errorConsulta.set(`No se encontraron datos para el CUIT ${cuitLimpio}.`);
-          }
-          this.cargando.set(false);
-        },
-      });
+        // Actualizamos la lista
+        this.consultasAcumuladas.update(prev => [{
+          cuit: cuitLimpio,
+          nombre: data.denominacion,
+          dataDeuda: res,
+          dataCheques: res,
+          analisis: analisis,
+          abierto: false,
+          chequesAbierto: false
+        }, ...prev]);
+
+        // Limpiamos el campo para el siguiente CUIT
+        this.cuitBusqueda = '';
+        this.errorConsulta.set(null);
+      } else {
+        this.errorConsulta.set("No se encontraron datos para este CUIT.");
+      }
+
+      // 4. Finalización y recuperación del foco
+      this.cargando.set(false);
+
+      // Usamos setTimeout para esperar a que Angular habilite el input (por el [disabled])
+      // antes de intentar poner el cursor adentro.
+      setTimeout(() => {
+        inputElement?.focus();
+      }, 0);
+    });
   }
 
-  private procesarRiesgoCompleto(deuda: any, cheques: any) {
-    // Variables para el análisis de cheques
+  private procesarRiesgoCompleto(data: any) {
     let tieneChequesSinFondoRecientes = false;
     let cantidadChequesSinFondo = 0;
     let montoTotalChequesSinFondo = 0;
 
-    const seisMesesAtras = new Date();
-    seisMesesAtras.setMonth(seisMesesAtras.getMonth() - 6);
+    // 1. Configurar filtro de tiempo (3 meses atrás desde hoy)
+    const tresMesesAtras = new Date();
+    tresMesesAtras.setMonth(tresMesesAtras.getMonth() - 3);
 
-    // 1. Procesamiento de Cheques (Causal: SIN FONDOS)
-    if (cheques?.results?.causales) {
-      const sinFondos = cheques.results.causales.find((c: any) => c.causal === "SIN FONDOS");
+    // Array para guardar solo lo que queremos mostrar en el HTML
+    let chequesFiltrados: any[] = [];
+
+    // 2. Procesar Cheques (Causales)
+    if (data.causales) {
+      const sinFondos = data.causales.find((c: any) => c.causal === "SIN FONDOS");
 
       if (sinFondos) {
         sinFondos.entidades.forEach((ent: any) => {
-          // Filtramos los detalles para quedarnos solo con los que no tienen fecha de pago
-          const chequesSinPago = ent.detalle.filter((det: any) => det.fechaPago === null);
-
-          chequesSinPago.forEach((det: any) => {
-            // 1. Sumamos solo si el cheque sigue impago
-            cantidadChequesSinFondo++;
-            montoTotalChequesSinFondo += (det.monto || 0);
-
-            // 2. Verificamos si este rechazo impago es reciente (últimos 6 meses)
+          // Filtrar detalles: Sin fecha de pago Y dentro del rango de 3 meses
+          const detallesRecientes = ent.detalle.filter((det: any) => {
             const fechaRechazo = new Date(det.fechaRechazo);
-            if (fechaRechazo >= seisMesesAtras) {
-              tieneChequesSinFondoRecientes = true;
-            }
+            return det.fechaPago === null && fechaRechazo >= tresMesesAtras;
           });
+
+          if (detallesRecientes.length > 0) {
+            detallesRecientes.forEach((det: any) => {
+              cantidadChequesSinFondo++;
+              montoTotalChequesSinFondo += det.monto;
+              tieneChequesSinFondoRecientes = true;
+            });
+
+            // Guardamos la entidad con sus detalles filtrados para el acordeón
+            chequesFiltrados.push({
+              entidad: ent.entidad,
+              detalle: detallesRecientes
+            });
+          }
         });
       }
     }
 
-    // 2. Procesamiento de Deuda Bancaria
-    // Tomamos el periodo más reciente (índice 0)
-    const periodoReciente = deuda.results.periodos[0];
+    // 3. Procesar Deuda Bancaria (Situación en el sistema financiero)
+    const periodoReciente = data.periodos?.[0];
     const entidades = periodoReciente?.entidades || [];
 
+    // Calculamos montos (ajustar el * 1000 según cómo lleguen los datos de tu API)
     const totalDeuda = entidades.reduce((acc: number, e: any) => acc + (e.monto || 0), 0) * 1000;
     const deudaMala = entidades
       .filter((e: any) => e.situacion > 2)
@@ -157,27 +201,28 @@ export class HomeComponent {
 
     const porcentajeMalo = totalDeuda > 0 ? (deudaMala * 100) / totalDeuda : 0;
 
-    // 3. Lógica de Decisión (Scoring)
+    // 4. Lógica de Decisión (Viable / Rechazado)
     let rechazado = false;
     let motivo = null;
 
     if (tieneChequesSinFondoRecientes) {
       rechazado = true;
-      motivo = `Cheques sin fondo recientes (${cantidadChequesSinFondo} en total)`;
+      motivo = `Cheques impagos recientes (${cantidadChequesSinFondo})`;
     } else if (porcentajeMalo > 10) {
       rechazado = true;
-      motivo = `Exceso de deuda irregular: ${porcentajeMalo.toFixed(1)}% (Situación > 2)`;
+      motivo = `Situación irregular: ${porcentajeMalo.toFixed(1)}%`;
     }
 
-    // 4. Retorno del objeto de análisis
+    // 5. Retornar objeto de análisis completo
     return {
-      totalDeuda: totalDeuda,
+      totalDeuda,
+      montoTotalChequesSinFondo,
+      cantidadChequesSinFondo,
       maloDeuda: deudaMala,
       tieneChequesSinFondoRecientes,
-      cantidadChequesSinFondo,       // Cantidad total de cheques "SIN FONDOS"
-      montoTotalChequesSinFondo,      // Suma total de montos de esos cheques
       motivoRechazo: motivo,
-      rechazado: rechazado
+      rechazado,
+      chequesParaMostrar: chequesFiltrados // <--- Esta es la clave para el HTML
     };
   }
 
@@ -204,5 +249,31 @@ export class HomeComponent {
     if (s === 1) return base + "bg-green-100 text-green-700";
     if (s === 2) return base + "bg-yellow-100 text-yellow-700";
     return base + "bg-red-100 text-red-700";
+  }
+
+
+
+  private validarAlgoritmoCuit(cuit: string): boolean {
+    const coeficientes = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+    const digitos = cuit.split('').map(Number);
+    const verificadorOriginal = digitos[10];
+
+    // Calculamos el producto escalar
+    let suma = 0;
+    for (let i = 0; i < 10; i++) {
+      suma += digitos[i] * coeficientes[i];
+    }
+
+    let resultado = 11 - (suma % 11);
+
+    // Casos especiales de AFIP/ANSES
+    if (resultado === 11) {
+      resultado = 0;
+    } else if (resultado === 10) {
+      // Si da 10, el CUIT es inválido (usualmente AFIP cambia el prefijo 20 a 23 en estos casos)
+      return false;
+    }
+
+    return resultado === verificadorOriginal;
   }
 }

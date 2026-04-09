@@ -1,88 +1,115 @@
-<main class="max-w-4xl mx-auto p-6">
-    <section class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-8">
-        <div class="flex justify-between items-center mb-4">
-            <h2 class="text-lg font-semibold text-gray-700">Consulta Central de Deudores + Cheques</h2>
-            <img src="/assets/icon/Logo-BCRA.svg" alt="" width="120px">
+<main class="max-w-4xl mx-auto p-6 space-y-8 font-sans antialiased text-slate-900">
+
+    <section class="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 ring-1 ring-slate-950/5">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+            <div>
+                <h2 class="text-xl font-bold tracking-tight text-slate-800">Consulta Central de Deudores</h2>
+                <p class="text-xs text-slate-500 mt-1">Información consolidada de situación crediticia y cheques</p>
+            </div>
+            <img src="/assets/icon/Logo-BCRA.svg" alt="BCRA" class="h-10 w-auto grayscale opacity-80">
         </div>
-        <div class="flex flex-col md:flex-row gap-4">
-            <div class="flex-1 relative flex items-center">
-                <input type="text" [(ngModel)]="cuitBusqueda" (keydown.enter)="agregarConsulta()"
-                    oninput="this.value = this.value.replace(/[^0-9-]/g, '')" placeholder="Ej: 20-12345678-9"
-                    class="w-full pl-4 pr-12 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
-                    [disabled]="cargando()" />
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="md:col-span-3 relative group">
+                <input #cuitInput type="text" [(ngModel)]="cuitBusqueda" (keydown.enter)="agregarConsulta(cuitInput)"
+                    oninput="this.value = this.value.replace(/[^0-9-]/g, '')"
+                    placeholder="Ingrese CUIT (Ej: 20-12345678-9)"
+                    class="w-full pl-4 pr-14 py-3.5 rounded-xl border border-slate-300 ..." [disabled]="cargando()" />
 
                 <button (click)="agregarConsulta()" [disabled]="cargando() || !cuitBusqueda"
-                    class="absolute right-1 top-1 bottom-1 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-md flex items-center justify-center transition-colors disabled:bg-gray-200 disabled:text-gray-400">
+                    class="absolute right-1.5 top-1.5 bottom-1.5 w-11 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center transition-all active:scale-95 disabled:bg-slate-200 disabled:text-slate-400 shadow-sm">
 
                     @if (cargando()) {
                     <div class="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
                     } @else {
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
-                        stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd"
+                            d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+                            clip-rule="evenodd" />
                     </svg>
                     }
                 </button>
             </div>
 
             <button (click)="toggleMostrar()" [disabled]="consultasAcumuladas().length === 0"
-                class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-6 py-3 rounded-lg font-bold transition-colors disabled:bg-gray-100 disabled:text-gray-400">
-                Ver Consultas ({{ consultasAcumuladas().length }})
+                class="flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-3.5 rounded-xl font-semibold transition-all active:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed">
+                <span>Generar reporte</span>
+                <span class="bg-slate-700 text-white text-[10px] px-2 py-0.5 rounded-full">{{
+                    consultasAcumuladas().length }}</span>
             </button>
         </div>
-        @if (errorConsulta()) { <p class="mt-3 text-red-500 text-sm italic">⚠️ {{ errorConsulta() }}</p> }
+
+        @if (errorConsulta()) {
+        <div
+            class="mt-4 p-3 rounded-lg bg-red-50 border border-red-100 flex items-center gap-2 text-red-600 text-sm animate-pulse">
+            <span>⚠️</span> {{ errorConsulta() }}
+        </div>
+        }
     </section>
 
     @if (!mostrarDetalles() && consultasAcumuladas().length > 0) {
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 animate-fade-in">
+    <div
+        class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
         @for (item of consultasAcumuladas(); track item.cuit) {
-        <div class="bg-white p-3 rounded-lg border border-blue-200 flex justify-between items-center shadow-sm">
-            <div class="overflow-hidden">
-                <p class="text-[9px] text-gray-400 font-mono">{{ item.cuit }}</p>
-                <p class="text-xs font-bold text-blue-700 truncate">{{ item.nombre }}</p>
+        <div
+            class="group bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-blue-400 hover:shadow-md transition-all">
+            <div class="flex justify-between items-start">
+                <div class="max-w-[80%]">
+                    <p class="text-[15px] text-slate-500 font-bold tracking-tighter">{{ item.cuit }}</p>
+                    <h4 class="text-sm font-bold text-slate-800 truncate uppercase leading-tight">{{ item.nombre }}</h4>
+                </div>
+                <button (click)="eliminarConsulta(item.cuit)"
+                    class="text-slate-300 hover:text-red-500 transition-colors p-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
             </div>
-            <button (click)="eliminarConsulta(item.cuit)" class="text-gray-300 hover:text-red-500">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
-                    stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-            </button>
+
         </div>
         }
     </div>
     }
 
     @if (mostrarDetalles()) {
-    <div class="space-y-4 animate-fade-in">
-        <button (click)="mostrarDetalles.set(false)"
-            class="text-blue-600 text-xs font-bold mb-2 flex items-center gap-1">
-            ← Volver a la lista
+    <div class="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <button (click)="limpiarTodo()"
+            class="group text-blue-600 text-xs font-bold flex items-center gap-2 px-1 hover:text-blue-800 transition-colors">
+            <span class="group-hover:-translate-x-1 transition-transform"> <svg xmlns="http://www.w3.org/2000/svg"
+                    class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg></span> Borrar todo
         </button>
 
         @for (item of consultasAcumuladas(); track item.cuit; let i = $index) {
-        <div class="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden ring-1 ring-slate-950/5">
 
             <div (click)="toggleAccordion(i)"
-                class="p-4 bg-gray-50 flex justify-between items-center cursor-pointer border-b hover:bg-gray-100 transition-colors">
+                class="p-5 bg-white flex justify-between items-center cursor-pointer hover:bg-slate-50/80 transition-all select-none">
 
-                <div class="flex items-center gap-3">
-                    <div [class]="item.analisis?.rechazado ? 'bg-red-500' : 'bg-green-500'"
-                        class="w-3 h-3 rounded-full"></div>
+                <div class="flex items-center gap-4">
+                    <div [class]="item.analisis?.rechazado ? 'bg-red-500 shadow-red-200' : 'bg-emerald-500 shadow-emerald-200'"
+                        class="w-2.5 h-2.5 rounded-full shadow-lg"></div>
                     <div>
-                        <p class="text-[10px] text-gray-500 font-mono">{{ item.cuit }}</p>
-                        <h3 class="font-bold text-gray-800 uppercase text-sm">{{ item.nombre }}</h3>
+                        <p class="text-[15px] text-slate-400 font-medium leading-none mb-1">{{ item.cuit }}</p>
+                        <h3 class="font-bold text-slate-900 uppercase text-sm tracking-tight">{{ item.nombre }}</h3>
                     </div>
                 </div>
 
-                <div class="flex items-center gap-4">
-                    <span [class]="item.analisis?.rechazado ? 'bg-red-600' : 'bg-green-600'"
-                        class="px-2 py-0.5 rounded text-[10px] font-black text-white uppercase tracking-wider">
+                <div class="flex items-center gap-4 text-xs">
+                    <span
+                        [class]="item.analisis?.rechazado ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'"
+                        class="px-3 py-1 rounded-full font-black uppercase tracking-wider text-[9px]">
                         {{ item.analisis?.rechazado ? 'Rechazado' : 'Viable' }}
                     </span>
 
+                    <div class="h-8 w-px bg-slate-100"></div>
+
                     <button (click)="$event.stopImmediatePropagation(); eliminarConsulta(item.cuit)"
-                        class="text-red-500 hover:text-red-500 transition-colors p-1" title="Eliminar consulta">
+                        class="text-slate-400 hover:text-red-500 transition-colors p-2">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
                             stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -91,7 +118,7 @@
                     </button>
 
                     <svg xmlns="http://www.w3.org/2000/svg" [class.rotate-180]="item.abierto"
-                        class="h-4 w-4 text-gray-400 transition-transform" fill="none" viewBox="0 0 24 24"
+                        class="h-5 w-5 text-slate-300 transition-transform duration-300" fill="none" viewBox="0 0 24 24"
                         stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                     </svg>
@@ -99,109 +126,154 @@
             </div>
 
             @if (item.abierto) {
-            <div class="p-4 bg-white animate-fade-in">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <h4 class="text-[10px] font-black text-gray-400 uppercase mb-2">Resumen de Deuda</h4>
-                        <div class="grid grid-cols-2 gap-2 mb-4">
-                            <div class="bg-blue-50/50 p-2 rounded border border-blue-100">
-                                <p class="text-[8px] text-blue-400 font-bold uppercase">Total</p>
-                                <p class="text-sm font-bold text-blue-900">${{
-                                    item.analisis?.totalDeuda?.toLocaleString() }}</p>
-                            </div>
-                            <div class="bg-red-50/50 p-2 rounded border border-red-100">
-                                <p class="text-[8px] text-red-400 font-bold uppercase">Irregular</p>
-                                <p class="text-sm font-bold text-red-600">${{ item.analisis?.maloDeuda?.toLocaleString()
-                                    }}</p>
-                            </div>
+            <div class="p-6 bg-slate-50/50 border-t border-slate-100 animate-in zoom-in-95 duration-200">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+                            <h4 class="text-[12px] font-black text-slate-400 uppercase tracking-widest italic">Resumen
+                                de Deuda</h4>
+                            <span class="text-[12px] text-slate-400 font-mono">Último período</span>
                         </div>
 
-                        <table class="w-full text-[11px]">
-                            <tbody class="divide-y divide-gray-50">
-                                @for (ent of item.dataDeuda.results.periodos[0]?.entidades; track ent.entidad) {
-                                <tr>
-                                    <td class="py-1.5 font-medium text-gray-700">{{ ent.entidad }}</td>
-                                    <td class="py-1.5 text-center">
-                                        <span [class]="getSituacionClass(ent.situacion)">{{ ent.situacion }}</span>
-                                    </td>
-                                    <td class="py-1.5 text-right font-mono text-gray-500">${{
-                                        ((ent.monto)* 1000).toLocaleString() }}</td>
-                                </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div class="border-t md:border-t-0 md:border-l md:pl-6 pt-4 md:pt-0">
-                        <h4 class="text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">Estado de
-                            Cheques</h4>
-
-                        <div class="grid grid-cols-2 gap-2 mb-4">
-                            <div class="bg-gray-50 p-2 rounded border border-gray-100">
-                                <p class="text-[8px] text-gray-400 font-bold uppercase">Cant. Rechazos</p>
-                                <p class="text-sm font-bold text-gray-700">{{ item.analisis?.cantidadChequesSinFondo ||
-                                    0 }}</p>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                                <p class="text-[8px] text-blue-500 font-bold uppercase mb-1">Total Consolidado</p>
+                                <p class="text-[14px] font-black text-slate-900 leading-none">
+                                    <span class="text-xs font-normal text-slate-400 mr-0.5">$</span>{{
+                                    item.analisis?.totalDeuda?.toLocaleString() }}
+                                </p>
                             </div>
-                            <div [class]="item.analisis?.cantidadChequesSinFondo ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-100'"
-                                class="p-2 rounded border">
-                                <p [class]="item.analisis?.cantidadChequesSinFondo ? 'text-red-400' : 'text-gray-400'"
-                                    class="text-[8px] font-bold uppercase">Monto Total</p>
-                                <p [class]="item.analisis?.cantidadChequesSinFondo ? 'text-red-700' : 'text-gray-700'"
-                                    class="text-sm font-bold">
-                                    ${{ (item.analisis?.montoTotalChequesSinFondo || 0).toLocaleString() }}
+                            <div [class]="(item.analisis?.maloDeuda ?? 0) > 0 ? 'bg-red-50 border-red-100' : 'bg-white border-slate-100'"
+                                class="p-3 rounded-xl border shadow-sm transition-colors">
+
+                                <p [class]="(item.analisis?.maloDeuda ?? 0) > 0 ? 'text-red-500' : 'text-slate-400'"
+                                    class="text-[8px] font-bold uppercase mb-1">
+                                    Irregular / Incumplido
+                                </p>
+
+                                <p [class]="(item.analisis?.maloDeuda ?? 0) > 0 ? 'text-red-600' : 'text-slate-900'"
+                                    class="text-[14px] font-black leading-none">
+                                    <span class="text-xs font-normal text-slate-400 mr-0.5">$</span>{{
+                                    item.analisis?.maloDeuda?.toLocaleString() ?? '0' }}
                                 </p>
                             </div>
                         </div>
 
-                        <div class="border rounded-lg overflow-hidden border-gray-100">
-                            <button (click)="toggleCheques(i, $event)"
-                                class="w-full flex justify-between items-center p-3 text-left transition-colors"
-                                [class]="item.analisis?.tieneChequesSinFondoRecientes ? 'bg-red-50 hover:bg-red-100' : 'bg-gray-50 hover:bg-gray-100'">
+                        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                            <table class="w-full text-[11px]">
+                                <thead
+                                    class="bg-slate-50 text-slate-400 uppercase text-[8px] font-bold tracking-wider border-b border-slate-100">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left">Entidad</th>
+                                        <th class="px-3 py-2 text-center">Sit.</th>
+                                        <th class="px-3 py-2 text-right">Monto</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-50">
+                                    @for (ent of item.dataDeuda.results.periodos[0]?.entidades; track ent.entidad) {
+                                    <tr class="hover:bg-slate-50/50 transition-colors">
+                                        <td class="px-3 py-2 font-semibold text-slate-700 truncate max-w-[120px]">{{
+                                            ent.entidad }}</td>
+                                        <td class="px-3 py-2 text-center">
+                                            <span [class]="getSituacionClass(ent.situacion)"
+                                                class="inline-block px-1.5 py-0.5 rounded-md font-black">{{
+                                                ent.situacion }}</span>
+                                        </td>
+                                        <td class="px-3 py-2 text-right font-mono text-slate-500">${{ ((ent.monto)*
+                                            1000).toLocaleString() }}</td>
+                                    </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
 
-                                <div class="flex items-center gap-2">
-                                    <span class="text-lg">{{ item.analisis?.tieneChequesSinFondoRecientes ? '⚠️' : '✅'
-                                        }}</span>
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+                            <h4
+                                class="text-[12px] font-black text-slate-400 uppercase tracking-widest italic text-slate-400">
+                                Estado de Cheques</h4>
+                            <span class="text-[12px] text-slate-400 font-mono tracking-tighter">Histórico 3
+                                meses</span>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                                <p class="text-[8px] text-slate-400 font-bold uppercase mb-1">Cant. Rechazos</p>
+                                <p class="text-lg font-black text-slate-700 leading-none">{{
+                                    item.analisis?.cantidadChequesSinFondo || 0 }}</p>
+                            </div>
+                            <div [class]="item.analisis?.cantidadChequesSinFondo ? 'bg-red-50 border-red-100' : 'bg-white border-slate-100'"
+                                class="p-3 rounded-xl border shadow-sm">
+                                <p [class]="item.analisis?.cantidadChequesSinFondo ? 'text-red-400' : 'text-slate-400'"
+                                    class="text-[8px] font-bold uppercase mb-1">Total Multas/Fondo</p>
+                                <p [class]="item.analisis?.cantidadChequesSinFondo ? 'text-red-700' : 'text-slate-700'"
+                                    class="text-[14px] font-black leading-none">
+                                    <span class="text-xs font-normal text-slate-400 mr-0.5">$</span>{{
+                                    (item.analisis?.montoTotalChequesSinFondo || 0).toLocaleString() }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                            <button (click)="toggleCheques(i, $event)"
+                                class="w-full flex justify-between items-center p-4 text-left transition-all"
+                                [class]="item.analisis?.tieneChequesSinFondoRecientes ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-slate-50'">
+
+                                <div class="flex items-center gap-3">
+                                    <div [class]="item.analisis?.tieneChequesSinFondoRecientes ? 'bg-red-500 text-white shadow-red-200' : 'bg-slate-100 text-slate-400'"
+                                        class="w-8 h-8 rounded-lg flex items-center justify-center text-xs shadow-md">
+                                        {{ item.analisis?.tieneChequesSinFondoRecientes ? '!' : '✓' }}
+                                    </div>
                                     <div>
-                                        <p class="text-[10px] font-bold text-gray-700 uppercase">Sin fondos / No pagos
-                                        </p>
-                                        <p class="text-[9px] text-gray-500">Click para ver detalle</p>
+                                        <p
+                                            class="text-[10px] font-bold text-slate-800 uppercase tracking-tight leading-none mb-1">
+                                            Detalle de Cheques</p>
+                                        <p class="text-[9px] text-slate-400 italic">Ver causales y fechas</p>
                                     </div>
                                 </div>
                                 <svg xmlns="http://www.w3.org/2000/svg" [class.rotate-180]="item.chequesAbierto"
-                                    class="h-3 w-3 text-gray-400 transition-transform" fill="none" viewBox="0 0 24 24"
-                                    stroke="currentColor">
+                                    class="h-4 w-4 text-slate-300 transition-transform duration-300" fill="none"
+                                    viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                         d="M19 9l-7 7-7-7" />
                                 </svg>
                             </button>
 
                             @if (item.chequesAbierto) {
-                            <div class="p-3 bg-white border-t border-gray-100 animate-fade-in max-h-60 overflow-y-auto">
+                            <div
+                                class="p-0 bg-slate-50 border-t border-slate-100 animate-in slide-in-from-top-1 duration-300 max-h-60 overflow-y-auto custom-scrollbar">
                                 @if (item.analisis?.cantidadChequesSinFondo! > 0) {
-                                @for (causal of item.dataCheques.results.causales; track causal.causal) {
-                                @if (causal.causal === 'SIN FONDOS') {
-                                @for (entidad of causal.entidades; track entidad.entidad) {
-                                @for (det of entidad.detalle; track det.fechaRechazo) {
-                                @if (det.fechaPago === null) {
-                                <div
-                                    class="flex justify-between items-center text-[10px] border-b border-gray-50 py-2 last:border-0">
-                                    <div class="flex flex-col">
-                                        <span class="text-gray-800 font-bold">{{ entidad.entidad }}</span>
-                                        <span class="text-gray-400 font-mono">Rechazo: {{ det.fechaRechazo |
-                                            date:'dd/MM/yy' }}</span>
+                                <div class="divide-y divide-slate-100">
+                                    @for (causal of item.dataCheques.results.causales; track causal.causal) {
+                                    @if (causal.causal === 'SIN FONDOS') {
+                                    @for (entidad of causal.entidades; track entidad.entidad) {
+                                    @for (det of entidad.detalle; track det.fechaRechazo) {
+                                    @if (det.fechaPago === null) {
+                                    <div
+                                        class="flex justify-between items-center px-4 py-3 hover:bg-white transition-colors">
+                                        <div class="flex flex-col">
+                                            <span
+                                                class="text-[11px] text-slate-800 font-bold uppercase leading-none mb-1">{{
+                                                entidad.entidad }}</span>
+                                            <span class="text-[9px] text-slate-400 font-mono">Rechazo: {{
+                                                det.fechaRechazo | date:'dd/MM/yy' }}</span>
+                                        </div>
+                                        <span
+                                            class="font-black text-red-600 bg-red-100/50 px-2 py-1 rounded-md text-[10px]">
+                                            $ {{ det.monto?.toLocaleString() }}
+                                        </span>
                                     </div>
-                                    <span class="font-black text-red-600 bg-red-50 px-2 py-1 rounded">
-                                        $ {{ det.monto?.toLocaleString() }}
-                                    </span>
+                                    }
+                                    }
+                                    }
+                                    }
+                                    }
                                 </div>
-                                }
-                                }
-                                }
-                                }
-                                }
                                 } @else {
-                                <div class="py-4 text-center italic text-[10px] text-gray-400">
-                                    No se registran deudas por cheques
+                                <div class="py-8 text-center bg-white">
+                                    <p class="text-xs text-slate-400 italic">No se registran deudas activas</p>
                                 </div>
                                 }
                             </div>
