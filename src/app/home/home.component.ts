@@ -22,6 +22,7 @@ interface ConsultaCuit {
     cantidadChequesSinFondo: number;
     montoTotalChequesSinFondo: number;
     chequesParaMostrar: any[];
+    esErrorValidacion?: boolean; // Flag para el estado amarillo
   } | null;
 }
 
@@ -38,22 +39,17 @@ export class HomeComponent {
 
   // Estados de UI
   cuitBusqueda = '';
-  cargando = signal<boolean>(false);
+  cargandoManual = signal<boolean>(false);
+  cargandoMasivo = signal<boolean>(false);
   errorConsulta = signal<string | null>(null);
   mostrarDetalles = signal<boolean>(false);
 
-  // Almacenamiento de datos
+  // Almacenamiento
   consultasAcumuladas = signal<ConsultaCuit[]>([]);
-
-  // Objeto para envío masivo según tu interfaz CuitProcesado
   loteParaEnviar = signal<CuitProcesado | null>(null);
 
-  // --- SECCIÓN: CARGA MASIVA (EXCEL) - SIN FILTROS ---
+  // --- CARGA MASIVA (EXCEL) ---
 
-  /**
-   * Procesa el Excel extrayendo cualquier valor numérico.
-   * No filtra por longitud ni por algoritmo; el backend validará todo.
-   */
   procesarArchivoExcel(event: any) {
     const file = event.target.files[0];
     if (!file) return;
@@ -63,8 +59,6 @@ export class HomeComponent {
       const data = new Uint8Array(e.target.result);
       const workbook = XLSX.read(data, { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-
-      // Matriz de datos crudos
       const matriz: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
       const listaTemporal: { id: number; cuit: string }[] = [];
@@ -73,128 +67,118 @@ export class HomeComponent {
 
       matriz.forEach((fila) => {
         fila.forEach((celda) => {
-          if (celda !== null && celda !== undefined && celda !== '') {
-            // Extraemos solo los números
+          if (celda) {
             const valorLimpio = String(celda).replace(/\D/g, '');
-
-            // Si después de limpiar quedó algo de texto numérico, lo agregamos
-            if (valorLimpio.length > 0) {
-              if (!cuitsVistos.has(valorLimpio)) {
-                cuitsVistos.add(valorLimpio);
-                listaTemporal.push({
-                  id: indice++,
-                  cuit: valorLimpio
-                });
-              }
+            if (valorLimpio.length > 0 && !cuitsVistos.has(valorLimpio)) {
+              cuitsVistos.add(valorLimpio);
+              listaTemporal.push({ id: indice++, cuit: valorLimpio });
             }
           }
         });
       });
 
-      // Estructura final: { data: [{id, cuit}] }
-      const objetoFinal: CuitProcesado = {
-        data: listaTemporal
-      };
-
-      this.loteParaEnviar.set(objetoFinal);
-      console.log('Objeto generado (Data Cruda total):', objetoFinal);
+      this.loteParaEnviar.set({ data: listaTemporal });
     };
-
     reader.readAsArrayBuffer(file);
   }
 
-  /**
-   * Envía el objeto completo a la consola (preparado para el endpoint)
-   */
   ejecutarConsultaMasiva() {
     const payload = this.loteParaEnviar();
-
-    const payloadJson = JSON.stringify(payload);
-
     if (!payload || payload.data.length === 0) return;
+
+    this.cargandoMasivo.set(true);
+    this.errorConsulta.set(null);
 
     this.bcraSvc.getDeudas(payload).subscribe({
       next: (res) => {
-        console.log('Respuesta del servidor:', res);
-        // Aquí podrías manejar la respuesta exitosa
+        console.log('Respuesta recibida:', res);
+
+        const procesados = res.results.map((item: any) => {
+          // 1. CASO AMARILLO: Mensaje de error explícito del backend
+          if (item.message) {
+            return {
+              cuit: `ID #${item.id}`,
+              nombre: 'Error de validación',
+              analisis: {
+                motivoRechazo: item.message,
+                esErrorValidacion: true
+              }
+            };
+          }
+
+          // 2. CASO DATA: Verificamos que 'data' exista y tenga identificación
+          if (item.data && item.data.identificacion) {
+            const analisis = this.procesarRiesgoCompleto(item.data);
+            return {
+              cuit: item.data.identificacion.toString(),
+              nombre: item.data.denominacion || 'SIN DENOMINACIÓN',
+              dataDeuda: { results: item.data },
+              dataCheques: { results: item.data },
+              analisis: { ...analisis, esErrorValidacion: false },
+              abierto: false,
+              chequesAbierto: false
+            };
+          }
+
+          // 3. CASO DATA NULA: (Como tus IDs 13, 21, 26, 27, 30 del JSON)
+          // Si viene data pero todo es null, lo tratamos como una observación (Amarillo)
+          return {
+            cuit: `ID #${item.id}`,
+            nombre: 'Sin información disponible',
+            analisis: {
+              motivoRechazo: "El BCRA no retornó datos para este CUIT",
+              esErrorValidacion: true
+            }
+          };
+        });
+
+        // Actualizamos el signal con los datos procesados
+        this.consultasAcumuladas.set(procesados);
+
+        // IMPORTANTE: Asegúrate de activar la vista de detalles
+        this.mostrarDetalles.set(true);
+
+        this.cargandoMasivo.set(false);
+        this.loteParaEnviar.set(null);
       },
       error: (err) => {
-        console.error('Error en la carga masiva:', err);
-        this.errorConsulta.set("Error al enviar los datos al servidor.");
+        console.error('Error en la petición:', err);
+        this.cargandoMasivo.set(false);
+        this.errorConsulta.set("Error de conexión con el servidor.");
       }
     });
-
-    console.log('--- ENVIANDO DATA CRUDA AL BACKEND ---');
-    console.log('JSON Payload:', JSON.stringify(payload));
-    console.table(payload.data);
-
-
-
-    // Limpiamos la carga masiva tras el envío
-    this.loteParaEnviar.set(null);
   }
 
-  // --- SECCIÓN: CONSULTA INDIVIDUAL (Sigue con validación manual) ---
+  // --- CONSULTA INDIVIDUAL ---
 
   agregarConsulta(inputElement?: HTMLInputElement) {
     const cuitLimpio = this.cuitBusqueda.replace(/\D/g, '');
-
-    if (!cuitLimpio || cuitLimpio.length !== 11) {
-      this.errorConsulta.set("El CUIT debe tener 11 dígitos.");
-      inputElement?.focus();
+    if (cuitLimpio.length !== 11 || !this.validarAlgoritmoCuit(cuitLimpio)) {
+      this.errorConsulta.set("CUIT inválido.");
       return;
     }
 
-    if (!this.validarAlgoritmoCuit(cuitLimpio)) {
-      this.errorConsulta.set("CUIT inválido (dígito verificador).");
-      inputElement?.focus();
-      return;
-    }
-
-    if (this.consultasAcumuladas().some(c => c.cuit === cuitLimpio)) {
-      this.errorConsulta.set(`El CUIT ${cuitLimpio} ya fue consultado.`);
-      this.cuitBusqueda = '';
-      inputElement?.focus();
-      return;
-    }
-
-    this.cargando.set(true);
-    this.errorConsulta.set(null);
-
-    this.bcraSvc.getDeudas(cuitLimpio).pipe(
-      delay(500),
-      catchError((err) => {
-        const msg = err.error?.error || "Error de conexión.";
-        this.errorConsulta.set(msg);
-        this.cargando.set(false);
-        setTimeout(() => inputElement?.focus(), 0);
-        return of(null);
-      })
-    ).subscribe(res => {
-      if (res?.results) {
-        const data = res.results;
-        const analisis = this.procesarRiesgoCompleto(data);
-
+    this.cargandoManual.set(true);
+    // Simulamos la estructura que espera el componente usando el servicio unitario
+    this.bcraSvc.getDeudas(cuitLimpio).subscribe({
+      next: (res) => {
+        const analisis = this.procesarRiesgoCompleto(res.results);
         this.consultasAcumuladas.update(prev => [{
           cuit: cuitLimpio,
-          nombre: data.denominacion,
+          nombre: res.results.denominacion,
           dataDeuda: res,
           dataCheques: res,
-          analisis: analisis,
-          abierto: false,
-          chequesAbierto: false
+          analisis: { ...analisis, esErrorValidacion: false },
+          abierto: false
         }, ...prev]);
-
         this.cuitBusqueda = '';
-      } else {
-        this.errorConsulta.set("No se encontraron datos.");
-      }
-      this.cargando.set(false);
-      setTimeout(() => inputElement?.focus(), 0);
+        this.cargandoManual.set(false);
+      },
+      error: () => this.cargandoManual.set(false)
     });
   }
 
-  // --- MÉTODOS PRIVADOS Y HELPERS ---
+  // --- LÓGICA DE NEGOCIO ---
 
   private procesarRiesgoCompleto(data: any) {
     let tieneChequesSinFondoRecientes = false;
@@ -213,7 +197,6 @@ export class HomeComponent {
             const fechaRechazo = new Date(det.fechaRechazo);
             return det.fechaPago === null && fechaRechazo >= tresMesesAtras;
           });
-
           if (detallesRecientes.length > 0) {
             detallesRecientes.forEach((det: any) => {
               cantidadChequesSinFondo++;
@@ -226,14 +209,10 @@ export class HomeComponent {
       }
     }
 
-    const periodoReciente = data.periodos?.[0];
-    const entidades = periodoReciente?.entidades || [];
+    const entidades = data.periodos?.[0]?.entidades || [];
     const totalDeuda = entidades.reduce((acc: number, e: any) => acc + (e.monto || 0), 0) * 1000;
     const deudaMala = entidades.filter((e: any) => e.situacion > 2).reduce((acc: number, e: any) => acc + (e.monto || 0), 0) * 1000;
     const porcentajeMalo = totalDeuda > 0 ? (deudaMala * 100) / totalDeuda : 0;
-
-    let rechazado = tieneChequesSinFondoRecientes || porcentajeMalo > 10;
-    let motivo = tieneChequesSinFondoRecientes ? `Cheques impagos (${cantidadChequesSinFondo})` : (porcentajeMalo > 10 ? `Irregular: ${porcentajeMalo.toFixed(1)}%` : null);
 
     return {
       totalDeuda,
@@ -241,55 +220,44 @@ export class HomeComponent {
       cantidadChequesSinFondo,
       maloDeuda: deudaMala,
       tieneChequesSinFondoRecientes,
-      motivoRechazo: motivo,
-      rechazado,
+      motivoRechazo: tieneChequesSinFondoRecientes ? 'Cheques impagos' : (porcentajeMalo > 10 ? 'Situación irregular' : null),
+      rechazado: tieneChequesSinFondoRecientes || porcentajeMalo > 10,
       chequesParaMostrar: chequesFiltrados
     };
   }
 
+  // --- HELPERS ---
   private validarAlgoritmoCuit(cuit: string): boolean {
     const coeficientes = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
     const digitos = cuit.split('').map(Number);
-    if (digitos.length !== 11) return false;
-
     let suma = 0;
     for (let i = 0; i < 10; i++) suma += digitos[i] * coeficientes[i];
-
     let resultado = 11 - (suma % 11);
     if (resultado === 11) resultado = 0;
-    if (resultado === 10) return false;
-
     return resultado === digitos[10];
   }
 
   toggleAccordion(index: number) {
-    this.consultasAcumuladas.update(consultas => {
-      const nuevas = [...consultas];
-      nuevas.forEach((c, i) => { if (i !== index) c.abierto = false; });
-      nuevas[index].abierto = !nuevas[index].abierto;
-      return nuevas;
+    this.consultasAcumuladas.update(list => {
+      const newList = [...list];
+      newList[index].abierto = !newList[index].abierto;
+      return newList;
     });
   }
 
   toggleCheques(index: number, event: Event) {
     event.stopPropagation();
-    this.consultasAcumuladas.update(consultas => {
-      const nuevas = [...consultas];
-      nuevas[index].chequesAbierto = !nuevas[index].chequesAbierto;
-      return nuevas;
+    this.consultasAcumuladas.update(list => {
+      const newList = [...list];
+      newList[index].chequesAbierto = !newList[index].chequesAbierto;
+      return newList;
     });
-  }
-
-  eliminarConsulta(cuit: string) {
-    this.consultasAcumuladas.update(prev => prev.filter(c => c.cuit !== cuit));
-    if (this.consultasAcumuladas().length === 0) this.mostrarDetalles.set(false);
   }
 
   limpiarTodo() {
     this.consultasAcumuladas.set([]);
     this.mostrarDetalles.set(false);
-    this.errorConsulta.set(null);
-    this.cuitBusqueda = '';
+    this.loteParaEnviar.set(null);
   }
 
   toggleMostrar() { this.mostrarDetalles.set(true); }
