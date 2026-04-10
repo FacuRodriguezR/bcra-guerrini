@@ -12,13 +12,13 @@ export class BcraService {
   // USA EL PREFIJO EXACTO QUE PUSIMOS EN EL PROXY (api-bcra)
   // IMPORTANTE: Sin barra al final
 
-  apiUrlLucas = 'http://192.168.2.106:3000/BCRA-debts/';
+  apiUrlLucas = 'http://192.168.2.106:3000/BCRA-debts';
 
   private baseUrl = 'https://api.bcra.gob.ar/centraldedeudores/v1.0/Deudas';
 
-  getDeudas(cuit: string): Observable<any> {
+  getDeudas(cuits: any): Observable<any> {
     // return this.http.get(`${this.baseUrl}/Historicas/${cuit}`);
-    return this.http.get(`${this.apiUrlLucas}${cuit}`);
+    return this.http.post(`${this.apiUrlLucas}`, cuits);
   }
 
   getChequesRechazados(cuit: string): Observable<any> {

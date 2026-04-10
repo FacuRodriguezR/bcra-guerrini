@@ -32,3 +32,11 @@ export interface ChequeDetalle {
     monto: number;
     fechaPago: string | null;
 }
+
+
+export interface CuitProcesado {
+    data: {
+        id: number;
+        cuit: string;
+    }[];
+}
