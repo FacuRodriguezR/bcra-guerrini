@@ -5,6 +5,7 @@ import { BcraService } from '../bcra.service';
 import * as XLSX from 'xlsx';
 
 interface ConsultaCuit {
+  id?: number; // Agregado para el control de orden
   cuit: string;
   nombre: string;
   dataDeuda: any;
@@ -27,6 +28,7 @@ interface ResumenEnvio {
   cuit: string;
   status: 'viable' | 'rechazado' | 'verificar';
 }
+
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -49,7 +51,7 @@ export class HomeComponent {
 
   payloadFinal = signal<{ data: ResumenEnvio[] } | null>(null);
 
-  // 1. AGREGAR MANUAL (Sin validación de algoritmo)
+  // 1. AGREGAR MANUAL
   agregarCuitALote() {
     const cuitLimpio = this.cuitBusqueda.replace(/\D/g, '');
 
@@ -58,14 +60,12 @@ export class HomeComponent {
       return;
     }
 
-    // Agregamos solo el string al array
     this.loteParaEnviar.update(actual => [...actual, cuitLimpio]);
-
     this.cuitBusqueda = '';
     this.errorConsulta.set(null);
   }
 
-  // 2. PROCESAR EXCEL (Sin filtros de validación)
+  // 2. PROCESAR EXCEL (Solo Columna A + Validación A1)
   procesarArchivoExcel(event: any) {
     const file = event.target.files[0];
     if (!file) return;
@@ -77,7 +77,6 @@ export class HomeComponent {
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const matriz: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-      // Validación A1
       if (!matriz[0] || !matriz[0][0]) {
         this.errorConsulta.set("Archivo inválido: La celda A1 debe tener datos.");
         return;
@@ -99,6 +98,7 @@ export class HomeComponent {
     };
     reader.readAsArrayBuffer(file);
   }
+
   // 3. CONSULTA MASIVA
   ejecutarConsultaLote() {
     const dataAEnviar = this.loteParaEnviar();
@@ -108,15 +108,20 @@ export class HomeComponent {
 
     this.bcraSvc.getDeudas({ data: dataAEnviar }).subscribe({
       next: (res) => {
-        const nuevosResultados = res.results.map((item: any) => this.mapearResultado(item));
+        const offset = this.consultasAcumuladas().length;
+
+        // Mapeo para la vista (Historial)
+        const nuevosResultados = res.results.map((item: any, index: number) =>
+          this.mapearResultado(item, index + 1 + offset)
+        );
+
         this.consultasAcumuladas.update(prev => [...nuevosResultados, ...prev]);
 
-        // --- CONSTRUCCIÓN DEL PAYLOAD FINAL ---
+        // Construcción del payload para exportación
         const listaResumen: ResumenEnvio[] = res.results.map((item: any) => {
           let estadoFinal: 'viable' | 'rechazado' | 'verificar' = 'viable';
 
           if (item.message) {
-
             estadoFinal = 'verificar';
           } else if (item.data) {
             const an = this.procesarRiesgoCompleto(item.data);
@@ -131,10 +136,7 @@ export class HomeComponent {
           };
         });
 
-        // Guardamos el objeto con la estructura { data: [...] }
         this.payloadFinal.set({ data: listaResumen });
-
-        console.log('Objeto listo para enviar:', this.payloadFinal());
 
         this.loteParaEnviar.set([]);
         this.cargandoMasivo.set(false);
@@ -144,24 +146,28 @@ export class HomeComponent {
     });
   }
 
-  private mapearResultado(item: any) {
-    if (item.message) {
+  private mapearResultado(item: any, nuevoId: number) {
+    const tituloConsulta = `CONSULTA #${nuevoId}`;
 
+    if (item.message) {
       return {
-        cuit: `${item.data?.identificacion?.toString()}`,
-        nombre: 'Observación del Sistema',
+        id: nuevoId,
+        cuit: item.data?.identificacion?.toString() || item.id?.toString() || 'S/D',
+        nombre: `${tituloConsulta} - Observación`,
         analisis: { motivoRechazo: item.message, esErrorValidacion: true }
-      };
+      } as ConsultaCuit;
     }
+
     const analisis = this.procesarRiesgoCompleto(item.data);
     return {
-      cuit: item.data?.identificacion?.toString() || 'S/D',
-      nombre: item.data?.denominacion || 'SIN NOMBRE',
+      id: nuevoId,
+      cuit: item.data?.identificacion?.toString() || item.id?.toString() || 'S/D',
+      nombre: item.data?.denominacion || tituloConsulta,
       dataDeuda: { results: item.data },
       analisis: { ...analisis, esErrorValidacion: false },
       abierto: false,
       chequesAbierto: false
-    };
+    } as ConsultaCuit;
   }
 
   descargarReporteExcel() {
@@ -169,13 +175,8 @@ export class HomeComponent {
     if (!payload) return;
 
     this.cargandoMasivo.set(true);
-
     this.bcraSvc.enviarDatosExcel(payload).subscribe({
       next: (blob: Blob) => {
-        // Opción A: Usando la librería file-saver (recomendado)
-        // saveAs(blob, `Reporte_BCRA_${new Date().getTime()}.xlsx`);
-
-        // Opción B: JavaScript Nativo (sin librerías)
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -184,11 +185,9 @@ export class HomeComponent {
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
-
         this.cargandoMasivo.set(false);
       },
-      error: (err) => {
-        console.error('Error al descargar el excel', err);
+      error: () => {
         this.cargandoMasivo.set(false);
         this.errorConsulta.set("Error al generar el archivo Excel.");
       }
@@ -242,12 +241,7 @@ export class HomeComponent {
 
   enviarDatosAProcesar() {
     const payload = this.payloadFinal();
-    if (!payload) return;
-
-    console.log('Enviando JSON a la API destino:', JSON.stringify(payload));
-
-    // Ejemplo de envío:
-    // this.http.post('tu-url-de-api', payload).subscribe(...);
+    if (payload) console.log('Enviando JSON:', JSON.stringify(payload));
   }
 
   quitarDelLote(index: number) {
@@ -278,6 +272,7 @@ export class HomeComponent {
   limpiarTodo() {
     this.consultasAcumuladas.set([]);
     this.resumenParaExportar.set([]);
+    this.payloadFinal.set(null); // Botón de descarga desaparece
     this.mostrarDetalles.set(false);
   }
 }
