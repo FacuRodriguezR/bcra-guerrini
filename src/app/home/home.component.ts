@@ -77,23 +77,24 @@ export class HomeComponent {
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const matriz: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
+      // Validación A1 (se mantiene para asegurar que el archivo tiene algo)
       if (!matriz[0] || !matriz[0][0]) {
         this.errorConsulta.set("Archivo inválido: La celda A1 debe tener datos.");
         return;
       }
 
-      const nuevosCuits: string[] = [];
+      const nuevosDatos: string[] = [];
+
       matriz.forEach(fila => {
         const celdaA = fila[0];
-        if (celdaA) {
-          const cuit = String(celdaA).replace(/\D/g, '');
-          if (cuit.length >= 9 && cuit.length <= 11) {
-            nuevosCuits.push(cuit);
-          }
+        if (celdaA !== undefined && celdaA !== null && String(celdaA).trim() !== '') {
+          // Agregamos el contenido de la columna A tal cual esté
+          nuevosDatos.push(String(celdaA).trim());
         }
       });
 
-      this.loteParaEnviar.update(prev => [...prev, ...nuevosCuits]);
+      this.loteParaEnviar.update(prev => [...prev, ...nuevosDatos]);
+      this.errorConsulta.set(null);
       event.target.value = '';
     };
     reader.readAsArrayBuffer(file);
