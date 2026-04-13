@@ -40,3 +40,8 @@ export interface CuitProcesado {
         cuit: string;
     }[];
 }
+export interface ResumenEnvio {
+    id: number;
+    cuit: string;
+    resultado: string;
+}

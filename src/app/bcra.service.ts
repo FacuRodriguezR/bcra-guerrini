@@ -14,11 +14,19 @@ export class BcraService {
 
   apiUrlLucas = 'http://192.168.2.106:3000/BCRA-debts';
 
+  apiExcel = 'http://192.168.2.106:3000/BCRA-report'
+
   private baseUrl = 'https://api.bcra.gob.ar/centraldedeudores/v1.0/Deudas';
 
   getDeudas(cuits: any): Observable<any> {
     // return this.http.get(`${this.baseUrl}/Historicas/${cuit}`);
     return this.http.post(`${this.apiUrlLucas}`, cuits);
+  }
+
+  enviarDatosExcel(payload: any): Observable<Blob> {
+    return this.http.post(this.apiExcel, payload, {
+      responseType: 'blob' // CRUCIAL para archivos
+    });
   }
 
   getChequesRechazados(cuit: string): Observable<any> {

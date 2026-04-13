@@ -2,15 +2,12 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BcraService } from '../bcra.service';
-import { catchError, delay, of } from 'rxjs';
 import * as XLSX from 'xlsx';
-import { CuitProcesado } from '../model/client-model';
 
 interface ConsultaCuit {
   cuit: string;
   nombre: string;
   dataDeuda: any;
-  dataCheques: any;
   abierto?: boolean;
   chequesAbierto?: boolean;
   analisis: {
@@ -22,10 +19,14 @@ interface ConsultaCuit {
     cantidadChequesSinFondo: number;
     montoTotalChequesSinFondo: number;
     chequesParaMostrar: any[];
-    esErrorValidacion?: boolean; // Flag para el estado amarillo
+    esErrorValidacion?: boolean;
   } | null;
 }
 
+interface ResumenEnvio {
+  cuit: string;
+  status: 'viable' | 'rechazado' | 'verificar';
+}
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -37,19 +38,34 @@ interface ConsultaCuit {
 export class HomeComponent {
   private bcraSvc = inject(BcraService);
 
-  // Estados de UI
   cuitBusqueda = '';
-  cargandoManual = signal<boolean>(false);
   cargandoMasivo = signal<boolean>(false);
   errorConsulta = signal<string | null>(null);
   mostrarDetalles = signal<boolean>(false);
 
-  // Almacenamiento
+  loteParaEnviar = signal<string[]>([]);
   consultasAcumuladas = signal<ConsultaCuit[]>([]);
-  loteParaEnviar = signal<CuitProcesado | null>(null);
+  resumenParaExportar = signal<ResumenEnvio[]>([]);
 
-  // --- CARGA MASIVA (EXCEL) ---
+  payloadFinal = signal<{ data: ResumenEnvio[] } | null>(null);
 
+  // 1. AGREGAR MANUAL (Sin validación de algoritmo)
+  agregarCuitALote() {
+    const cuitLimpio = this.cuitBusqueda.replace(/\D/g, '');
+
+    if (cuitLimpio.length < 9 || cuitLimpio.length > 11) {
+      this.errorConsulta.set("El CUIT debe tener entre 9 y 11 dígitos.");
+      return;
+    }
+
+    // Agregamos solo el string al array
+    this.loteParaEnviar.update(actual => [...actual, cuitLimpio]);
+
+    this.cuitBusqueda = '';
+    this.errorConsulta.set(null);
+  }
+
+  // 2. PROCESAR EXCEL (Sin filtros de validación)
   procesarArchivoExcel(event: any) {
     const file = event.target.files[0];
     if (!file) return;
@@ -61,124 +77,123 @@ export class HomeComponent {
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const matriz: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-      const listaTemporal: { id: number; cuit: string }[] = [];
-      let indice = 1;
-      const cuitsVistos = new Set<string>();
+      // Validación A1
+      if (!matriz[0] || !matriz[0][0]) {
+        this.errorConsulta.set("Archivo inválido: La celda A1 debe tener datos.");
+        return;
+      }
 
-      matriz.forEach((fila) => {
-        fila.forEach((celda) => {
-          if (celda) {
-            const valorLimpio = String(celda).replace(/\D/g, '');
-            if (valorLimpio.length > 0 && !cuitsVistos.has(valorLimpio)) {
-              cuitsVistos.add(valorLimpio);
-              listaTemporal.push({ id: indice++, cuit: valorLimpio });
-            }
+      const nuevosCuits: string[] = [];
+      matriz.forEach(fila => {
+        const celdaA = fila[0];
+        if (celdaA) {
+          const cuit = String(celdaA).replace(/\D/g, '');
+          if (cuit.length >= 9 && cuit.length <= 11) {
+            nuevosCuits.push(cuit);
           }
-        });
+        }
       });
 
-      this.loteParaEnviar.set({ data: listaTemporal });
+      this.loteParaEnviar.update(prev => [...prev, ...nuevosCuits]);
+      event.target.value = '';
     };
     reader.readAsArrayBuffer(file);
   }
-
-  ejecutarConsultaMasiva() {
-    const payload = this.loteParaEnviar();
-    if (!payload || payload.data.length === 0) return;
+  // 3. CONSULTA MASIVA
+  ejecutarConsultaLote() {
+    const dataAEnviar = this.loteParaEnviar();
+    if (dataAEnviar.length === 0) return;
 
     this.cargandoMasivo.set(true);
-    this.errorConsulta.set(null);
 
-    this.bcraSvc.getDeudas(payload).subscribe({
+    this.bcraSvc.getDeudas({ data: dataAEnviar }).subscribe({
       next: (res) => {
-        console.log('Respuesta recibida:', res);
+        const nuevosResultados = res.results.map((item: any) => this.mapearResultado(item));
+        this.consultasAcumuladas.update(prev => [...nuevosResultados, ...prev]);
 
-        const procesados = res.results.map((item: any) => {
-          // 1. CASO AMARILLO: Mensaje de error explícito del backend
+        // --- CONSTRUCCIÓN DEL PAYLOAD FINAL ---
+        const listaResumen: ResumenEnvio[] = res.results.map((item: any) => {
+          let estadoFinal: 'viable' | 'rechazado' | 'verificar' = 'viable';
+
           if (item.message) {
-            return {
-              cuit: `ID #${item.id}`,
-              nombre: 'Error de validación',
-              analisis: {
-                motivoRechazo: item.message,
-                esErrorValidacion: true
-              }
-            };
+
+            estadoFinal = 'verificar';
+          } else if (item.data) {
+            const an = this.procesarRiesgoCompleto(item.data);
+            estadoFinal = an.rechazado ? 'rechazado' : 'viable';
+          } else {
+            estadoFinal = 'verificar';
           }
 
-          // 2. CASO DATA: Verificamos que 'data' exista y tenga identificación
-          if (item.data && item.data.identificacion) {
-            const analisis = this.procesarRiesgoCompleto(item.data);
-            return {
-              cuit: item.data.identificacion.toString(),
-              nombre: item.data.denominacion || 'SIN DENOMINACIÓN',
-              dataDeuda: { results: item.data },
-              dataCheques: { results: item.data },
-              analisis: { ...analisis, esErrorValidacion: false },
-              abierto: false,
-              chequesAbierto: false
-            };
-          }
-
-          // 3. CASO DATA NULA: (Como tus IDs 13, 21, 26, 27, 30 del JSON)
-          // Si viene data pero todo es null, lo tratamos como una observación (Amarillo)
           return {
-            cuit: `ID #${item.id}`,
-            nombre: 'Sin información disponible',
-            analisis: {
-              motivoRechazo: "El BCRA no retornó datos para este CUIT",
-              esErrorValidacion: true
-            }
+            cuit: item.data?.identificacion?.toString() || item.id?.toString() || '0',
+            status: estadoFinal
           };
         });
 
-        // Actualizamos el signal con los datos procesados
-        this.consultasAcumuladas.set(procesados);
+        // Guardamos el objeto con la estructura { data: [...] }
+        this.payloadFinal.set({ data: listaResumen });
 
-        // IMPORTANTE: Asegúrate de activar la vista de detalles
+        console.log('Objeto listo para enviar:', this.payloadFinal());
+
+        this.loteParaEnviar.set([]);
+        this.cargandoMasivo.set(false);
         this.mostrarDetalles.set(true);
+      },
+      error: () => this.cargandoMasivo.set(false)
+    });
+  }
+
+  private mapearResultado(item: any) {
+    if (item.message) {
+
+      return {
+        cuit: `${item.data?.identificacion?.toString()}`,
+        nombre: 'Observación del Sistema',
+        analisis: { motivoRechazo: item.message, esErrorValidacion: true }
+      };
+    }
+    const analisis = this.procesarRiesgoCompleto(item.data);
+    return {
+      cuit: item.data?.identificacion?.toString() || 'S/D',
+      nombre: item.data?.denominacion || 'SIN NOMBRE',
+      dataDeuda: { results: item.data },
+      analisis: { ...analisis, esErrorValidacion: false },
+      abierto: false,
+      chequesAbierto: false
+    };
+  }
+
+  descargarReporteExcel() {
+    const payload = this.payloadFinal();
+    if (!payload) return;
+
+    this.cargandoMasivo.set(true);
+
+    this.bcraSvc.enviarDatosExcel(payload).subscribe({
+      next: (blob: Blob) => {
+        // Opción A: Usando la librería file-saver (recomendado)
+        // saveAs(blob, `Reporte_BCRA_${new Date().getTime()}.xlsx`);
+
+        // Opción B: JavaScript Nativo (sin librerías)
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Reporte_BCRA_${new Date().getTime()}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
 
         this.cargandoMasivo.set(false);
-        this.loteParaEnviar.set(null);
       },
       error: (err) => {
-        console.error('Error en la petición:', err);
+        console.error('Error al descargar el excel', err);
         this.cargandoMasivo.set(false);
-        this.errorConsulta.set("Error de conexión con el servidor.");
+        this.errorConsulta.set("Error al generar el archivo Excel.");
       }
     });
   }
-
-  // --- CONSULTA INDIVIDUAL ---
-
-  agregarConsulta(inputElement?: HTMLInputElement) {
-    const cuitLimpio = this.cuitBusqueda.replace(/\D/g, '');
-    if (cuitLimpio.length !== 11 || !this.validarAlgoritmoCuit(cuitLimpio)) {
-      this.errorConsulta.set("CUIT inválido.");
-      return;
-    }
-
-    this.cargandoManual.set(true);
-    // Simulamos la estructura que espera el componente usando el servicio unitario
-    this.bcraSvc.getDeudas(cuitLimpio).subscribe({
-      next: (res) => {
-        const analisis = this.procesarRiesgoCompleto(res.results);
-        this.consultasAcumuladas.update(prev => [{
-          cuit: cuitLimpio,
-          nombre: res.results.denominacion,
-          dataDeuda: res,
-          dataCheques: res,
-          analisis: { ...analisis, esErrorValidacion: false },
-          abierto: false
-        }, ...prev]);
-        this.cuitBusqueda = '';
-        this.cargandoManual.set(false);
-      },
-      error: () => this.cargandoManual.set(false)
-    });
-  }
-
-  // --- LÓGICA DE NEGOCIO ---
 
   private procesarRiesgoCompleto(data: any) {
     let tieneChequesSinFondoRecientes = false;
@@ -186,86 +201,83 @@ export class HomeComponent {
     let montoTotalChequesSinFondo = 0;
     const tresMesesAtras = new Date();
     tresMesesAtras.setMonth(tresMesesAtras.getMonth() - 3);
-
     let chequesFiltrados: any[] = [];
 
-    if (data.causales) {
-      const sinFondos = data.causales.find((c: any) => c.causal === "SIN FONDOS");
-      if (sinFondos) {
-        sinFondos.entidades.forEach((ent: any) => {
-          const detallesRecientes = ent.detalle.filter((det: any) => {
+    if (data?.causales) {
+      data.causales.forEach((c: any) => {
+        c.entidades?.forEach((ent: any) => {
+          const detallesRecientes = ent.detalle?.filter((det: any) => {
             const fechaRechazo = new Date(det.fechaRechazo);
             return det.fechaPago === null && fechaRechazo >= tresMesesAtras;
-          });
+          }) || [];
           if (detallesRecientes.length > 0) {
             detallesRecientes.forEach((det: any) => {
-              cantidadChequesSinFondo++;
-              montoTotalChequesSinFondo += det.monto;
-              tieneChequesSinFondoRecientes = true;
+              if (c.causal === "SIN FONDOS") {
+                cantidadChequesSinFondo++;
+                montoTotalChequesSinFondo += det.monto;
+                tieneChequesSinFondoRecientes = true;
+              }
             });
-            chequesFiltrados.push({ entidad: ent.entidad, detalle: detallesRecientes });
+            chequesFiltrados.push({ entidad: ent.entidad, causal: c.causal, detalle: detallesRecientes });
           }
         });
-      }
+      });
     }
 
-    const entidades = data.periodos?.[0]?.entidades || [];
+    const entidades = data?.periodos?.[0]?.entidades || [];
     const totalDeuda = entidades.reduce((acc: number, e: any) => acc + (e.monto || 0), 0) * 1000;
     const deudaMala = entidades.filter((e: any) => e.situacion > 2).reduce((acc: number, e: any) => acc + (e.monto || 0), 0) * 1000;
-    const porcentajeMalo = totalDeuda > 0 ? (deudaMala * 100) / totalDeuda : 0;
 
     return {
       totalDeuda,
-      montoTotalChequesSinFondo,
-      cantidadChequesSinFondo,
       maloDeuda: deudaMala,
       tieneChequesSinFondoRecientes,
-      motivoRechazo: tieneChequesSinFondoRecientes ? 'Cheques impagos' : (porcentajeMalo > 10 ? 'Situación irregular' : null),
-      rechazado: tieneChequesSinFondoRecientes || porcentajeMalo > 10,
+      motivoRechazo: tieneChequesSinFondoRecientes ? 'Cheques impagos' : (deudaMala > (totalDeuda * 0.1) ? 'Situación irregular' : null),
+      rechazado: tieneChequesSinFondoRecientes || deudaMala > (totalDeuda * 0.1),
+      cantidadChequesSinFondo,
+      montoTotalChequesSinFondo,
       chequesParaMostrar: chequesFiltrados
     };
   }
 
-  // --- HELPERS ---
-  private validarAlgoritmoCuit(cuit: string): boolean {
-    const coeficientes = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
-    const digitos = cuit.split('').map(Number);
-    let suma = 0;
-    for (let i = 0; i < 10; i++) suma += digitos[i] * coeficientes[i];
-    let resultado = 11 - (suma % 11);
-    if (resultado === 11) resultado = 0;
-    return resultado === digitos[10];
+  enviarDatosAProcesar() {
+    const payload = this.payloadFinal();
+    if (!payload) return;
+
+    console.log('Enviando JSON a la API destino:', JSON.stringify(payload));
+
+    // Ejemplo de envío:
+    // this.http.post('tu-url-de-api', payload).subscribe(...);
+  }
+
+  quitarDelLote(index: number) {
+    this.loteParaEnviar.update(actual => actual.filter((_, i) => i !== index));
   }
 
   toggleAccordion(index: number) {
-    this.consultasAcumuladas.update(list => {
-      const newList = [...list];
-      newList[index].abierto = !newList[index].abierto;
-      return newList;
+    this.consultasAcumuladas.update(l => {
+      l[index].abierto = !l[index].abierto;
+      return [...l];
     });
   }
 
-  toggleCheques(index: number, event: Event) {
-    event.stopPropagation();
-    this.consultasAcumuladas.update(list => {
-      const newList = [...list];
-      newList[index].chequesAbierto = !newList[index].chequesAbierto;
-      return newList;
+  toggleCheques(index: number, e: Event) {
+    e.stopPropagation();
+    this.consultasAcumuladas.update(l => {
+      l[index].chequesAbierto = !l[index].chequesAbierto;
+      return [...l];
     });
+  }
+
+  getSituacionClass(s: number) {
+    if (s === 1) return "px-3 py-1 rounded-full text-[11px] font-bold bg-green-100 text-green-700";
+    if (s === 2) return "px-3 py-1 rounded-full text-[11px] font-bold bg-yellow-100 text-yellow-700";
+    return "px-3 py-1 rounded-full text-[11px] font-bold bg-red-100 text-red-700";
   }
 
   limpiarTodo() {
     this.consultasAcumuladas.set([]);
+    this.resumenParaExportar.set([]);
     this.mostrarDetalles.set(false);
-    this.loteParaEnviar.set(null);
-  }
-
-  toggleMostrar() { this.mostrarDetalles.set(true); }
-
-  getSituacionClass(s: number) {
-    const base = "px-3 py-1 rounded-full text-[11px] font-bold ";
-    if (s === 1) return base + "bg-green-100 text-green-700";
-    if (s === 2) return base + "bg-yellow-100 text-yellow-700";
-    return base + "bg-red-100 text-red-700";
   }
 }
