@@ -1,8 +1,10 @@
 <main class="max-w-4xl mx-auto p-6 space-y-6 font-sans antialiased text-slate-900">
 
+    <h2 class="text-2xl font-bold text-slate-800 tracking-tight">Análisis Central de Deudores</h2>
+
     <section class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
         <div class="flex justify-between items-center mb-6">
-            <h2 class="text-xl font-bold text-slate-800 tracking-tight">Análisis Central de Deudores</h2>
+            <h2 class="text-xl font-bold text-slate-800 tracking-tight">Ingrese un CUIT/CUIL</h2>
             <img src="/assets/icon/Logo-BCRA.svg" class="h-8 opacity-60" alt="BCRA">
         </div>
 
@@ -121,13 +123,13 @@
     @if (mostrarDetalles() && consultasAcumuladas().length > 0) {
     <div class="space-y-4 animate-in fade-in slide-in-from-bottom-4">
         <div class="flex justify-between items-center px-2">
-            <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Historial de Consultas</h3>
+            <h3 class="text-[12px] font-bold text-slate-400 uppercase tracking-[0.2em]">Historial de Consultas</h3>
             <button (click)="limpiarTodo()"
                 class="text-blue-600 text-[10px] font-bold uppercase hover:underline">Limpiar todo</button>
         </div>
 
         @for (item of consultasAcumuladas(); track $index; let i = $index) {
-        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden ring-1 ring-slate-950/5"
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:bg-slate-100 ring-1 ring-slate-950/5"
             [class.border-yellow-300]="item.analisis?.esErrorValidacion">
 
             <div (click)="!item.analisis?.esErrorValidacion && toggleAccordion(i)"
@@ -188,16 +190,16 @@
                 class="p-6 bg-slate-50/50 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-8 animate-in zoom-in-95 duration-200">
 
                 <div class="space-y-4">
-                    <h4 class="text-[10px] font-black text-slate-400 uppercase italic">Resumen de Deuda</h4>
+                    <h4 class="text-[13px] font-medium text-slate-400 uppercase ">Resumen de Deuda</h4>
                     <div class="grid grid-cols-2 gap-3">
                         <div class="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
-                            <p class="text-[8px] text-blue-500 font-bold uppercase mb-1">Total Consolidado</p>
+                            <p class="text-[10px] text-blue-500 font-bold uppercase mb-1">Total Consolidado</p>
                             <p class="text-sm font-black text-slate-900">${{ item.analisis?.totalDeuda?.toLocaleString()
                                 }}</p>
                         </div>
                         <div [class]="(item.analisis?.maloDeuda ?? 0) > 0 ? 'bg-red-50 border-red-100' : 'bg-white border-slate-100'"
                             class="p-3 rounded-xl border shadow-sm">
-                            <p class="text-[8px] font-bold uppercase mb-1 text-slate-400">Deuda Irregular</p>
+                            <p class="text-[10px] font-bold uppercase mb-1 text-slate-400">Deuda Irregular</p>
                             <p class="text-sm font-black text-slate-900">${{ item.analisis?.maloDeuda?.toLocaleString()
                                 }}</p>
                         </div>
@@ -205,7 +207,7 @@
 
                     <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
                         <table class="w-full text-[11px]">
-                            <thead class="bg-slate-50 text-slate-400 uppercase text-[8px] font-bold border-b">
+                            <thead class="bg-slate-50 text-slate-400 uppercase text-[10px] font-bold border-b">
                                 <tr>
                                     <th class="px-3 py-2 text-left">Entidad</th>
                                     <th class="px-3 py-2 text-center">Sit.</th>
@@ -218,7 +220,8 @@
                                     <td class="px-3 py-2 font-semibold text-slate-700">{{ ent.entidad }}</td>
                                     <td class="px-3 py-2 text-center"><span
                                             [class]="getSituacionClass(ent.situacion)">{{ ent.situacion }}</span></td>
-                                    <td class="px-3 py-2 text-right font-mono text-slate-500">${{ (ent.monto *
+                                    <td class="px-3 py-2 text-right font-mono text-slate-500 text-[12px]">${{ (ent.monto
+                                        *
                                         1000).toLocaleString() }}</td>
                                 </tr>
                                 }
@@ -228,24 +231,25 @@
                 </div>
 
                 <div class="space-y-4">
-                    <h4 class="text-[10px] font-black text-slate-400 uppercase italic">Estado de Cheques</h4>
+                    <h4 class="text-[13px] font-medium text-slate-400 uppercase ">Estado de Cheques (Últimos 3
+                        meses) </h4>
                     <div class="grid grid-cols-2 gap-3">
                         <div class="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
-                            <p class="text-[8px] text-slate-400 font-bold uppercase mb-1">Cant. Rechazos</p>
+                            <p class="text-[10px] text-slate-400 font-bold uppercase mb-1">Cant. Rechazos</p>
                             <p class="text-lg font-black text-slate-700 leading-none">{{
                                 item.analisis?.cantidadChequesSinFondo }}</p>
                         </div>
                         <div [class]="item.analisis?.cantidadChequesSinFondo ? 'bg-red-50 border-red-100 text-red-700' : 'bg-white border-slate-100 text-slate-900'"
                             class="p-3 rounded-xl border shadow-sm">
-                            <p class="text-[8px] font-bold uppercase mb-1 opacity-60">Monto Total</p>
+                            <p class="text-[10px] font-bold uppercase mb-1 opacity-60">Monto Total</p>
                             <p class="text-sm font-black">${{ item.analisis?.montoTotalChequesSinFondo?.toLocaleString()
                                 }}</p>
                         </div>
                     </div>
                     <button (click)="toggleCheques(i, $event)"
-                        class="w-full flex justify-between items-center p-4 border rounded-xl hover:bg-slate-50 transition-colors">
-                        <span class="text-[10px] font-black uppercase text-slate-500">Ver detalle de causales</span>
-                        <svg [class.rotate-180]="item.chequesAbierto" class="h-4 w-4 text-slate-300 transition-all"
+                        class="w-full flex justify-between items-center p-4 border rounded-xl hover:bg-red-200 transition-colors bg-red-100">
+                        <span class="text-[10px] font-black uppercase text-slate-500">Ver detalle de cheques</span>
+                        <svg [class.rotate-180]="item.chequesAbierto" class="h-4 w-4 text-slate-800 transition-all"
                             fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path d="M19 9l-7 7-7-7" stroke-width="2" />
                         </svg>
@@ -256,18 +260,21 @@
                         class="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden animate-in slide-in-from-top-2">
                         @for (grupo of item.analisis?.chequesParaMostrar; track $index) {
                         <div class="p-3">
-                            <span class="text-[8px] font-black text-red-500 uppercase tracking-tighter">{{ grupo.causal
+                            <span class="text-[11px] font-bold text-red-500 uppercase tracking-tighter">{{
+                                grupo.causal
                                 }}</span>
                             @for (det of grupo.detalle; track det.nroCheque) {
                             <div class="flex justify-between items-center mt-1">
                                 <div class="flex flex-col">
-                                    <span class="text-[10px] font-bold text-slate-700">{{ grupo.entidad }}</span>
-                                    <span class="text-[8px] text-slate-400 italic">#{{ det.nroCheque }} | {{
+                                    <!-- <span class="text-[10px] font-bold text-slate-700">{{ grupo.entidad }}</span> -->
+                                    <span class="text-[11px] font-medium text-slate-600 italic">#{{ det.nroCheque }} |
+                                        {{
                                         det.fechaRechazo | date:'dd/MM/yy' }}</span>
                                 </div>
-                                <span class="text-[10px] font-black text-slate-900">${{ det.monto?.toLocaleString()
+                                <span class="text-[11px] font-black text-slate-900">${{ det.monto?.toLocaleString()
                                     }}</span>
                             </div>
+                            <hr>
                             }
                         </div>
                         }
