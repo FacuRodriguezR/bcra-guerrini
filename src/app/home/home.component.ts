@@ -78,7 +78,7 @@ export class HomeComponent {
       const filasConDatos = matriz.filter(fila => fila[0] !== undefined && fila[0] !== null && String(fila[0]).trim() !== "");
 
       if (filasConDatos.length > 25) {
-        this.errorConsulta.set("Límite máximo de 25 registros superado.");
+        this.errorConsulta.set("El archivo solo puede contener hasta 25 CUITs.");
         event.target.value = '';
         return;
       }
@@ -132,7 +132,7 @@ export class HomeComponent {
             motivoTexto = 'Error de conexión: ' + item.message;
           } else if (estaLimpio) {
             estadoFinal = 'viable';
-            motivoTexto = 'Sin historial crediticio (Limpio)';
+            motivoTexto = 'Sin historial crediticio';
           } else {
             const an = this.procesarRiesgoCompleto(item.data);
             if (an.rechazado) {
