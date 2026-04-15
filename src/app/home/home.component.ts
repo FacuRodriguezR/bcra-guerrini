@@ -5,7 +5,7 @@ import { BcraService } from '../bcra.service';
 import * as XLSX from 'xlsx';
 
 interface ConsultaCuit {
-  id?: number; // Agregado para el control de orden
+  id?: number;
   cuit: string;
   nombre: string;
   dataDeuda: any;
@@ -27,6 +27,7 @@ interface ConsultaCuit {
 interface ResumenEnvio {
   cuit: string;
   status: 'viable' | 'rechazado' | 'verificar';
+  motivo: string;
 }
 
 @Component({
@@ -45,27 +46,24 @@ export class HomeComponent {
   errorConsulta = signal<string | null>(null);
   mostrarDetalles = signal<boolean>(false);
 
+  hayErrorStatus = signal<boolean>(false);
+  cuitsFallidos = signal<string[]>([]);
+
   loteParaEnviar = signal<string[]>([]);
   consultasAcumuladas = signal<ConsultaCuit[]>([]);
-  resumenParaExportar = signal<ResumenEnvio[]>([]);
-
   payloadFinal = signal<{ data: ResumenEnvio[] } | null>(null);
 
-  // 1. AGREGAR MANUAL
   agregarCuitALote() {
     const cuitLimpio = this.cuitBusqueda.replace(/\D/g, '');
-
     if (cuitLimpio.length < 9 || cuitLimpio.length > 11) {
       this.errorConsulta.set("El CUIT debe tener entre 9 y 11 dígitos.");
       return;
     }
-
     this.loteParaEnviar.update(actual => [...actual, cuitLimpio]);
     this.cuitBusqueda = '';
     this.errorConsulta.set(null);
   }
 
-  // 2. PROCESAR EXCEL (Solo Columna A + Validación A1)
   procesarArchivoExcel(event: any) {
     const file = event.target.files[0];
     if (!file) return;
@@ -77,127 +75,135 @@ export class HomeComponent {
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const matriz: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-      if (matriz.length > 50) {
-        this.errorConsulta.set("El archivo supera el máximo permitido de 50 registros.");
+      const filasConDatos = matriz.filter(fila => fila[0] !== undefined && fila[0] !== null && String(fila[0]).trim() !== "");
+
+      if (filasConDatos.length > 25) {
+        this.errorConsulta.set("Límite máximo de 25 registros superado.");
         event.target.value = '';
         return;
       }
 
-      if (!matriz[0] || !matriz[0][0]) {
-        this.errorConsulta.set("Archivo inválido: La celda A1 debe tener datos.");
-        return;
-      }
-
       const nuevosCuits: string[] = [];
-      matriz.forEach(fila => {
-        const celdaA = fila[0];
-        if (celdaA) {
-          const cuit = String(celdaA).replace(/\D/g, '');
-          if (cuit.length >= 7 && cuit.length <= 15) {
-            nuevosCuits.push(cuit);
-          }
+      filasConDatos.forEach(fila => {
+        const cuit = String(fila[0]).replace(/\D/g, '');
+        if (cuit.length >= 7 && cuit.length <= 15) {
+          nuevosCuits.push(cuit);
         }
       });
 
       this.loteParaEnviar.update(prev => [...prev, ...nuevosCuits]);
       event.target.value = '';
+      this.errorConsulta.set(null);
     };
     reader.readAsArrayBuffer(file);
   }
 
-  // 3. CONSULTA MASIVA
   ejecutarConsultaLote() {
     const dataAEnviar = this.loteParaEnviar();
     if (dataAEnviar.length === 0) return;
 
     this.cargandoMasivo.set(true);
+    this.hayErrorStatus.set(false);
+    this.consultasAcumuladas.set([]);
+    this.payloadFinal.set(null);
 
     this.bcraSvc.getDeudas({ data: dataAEnviar }).subscribe({
       next: (res) => {
-        const offset = this.consultasAcumuladas().length;
+        if (res.status === false) {
+          this.hayErrorStatus.set(true);
+          this.cuitsFallidos.set(dataAEnviar);
+        }
 
-        // Mapeo para la vista (Historial)
         const nuevosResultados = res.results.map((item: any, index: number) =>
-          this.mapearResultado(item, index + 1 + offset)
+          this.mapearResultado(item, index + 1)
         );
 
-        this.consultasAcumuladas.update(prev => [...nuevosResultados, ...prev]);
+        this.consultasAcumuladas.set(nuevosResultados);
 
-        // Construcción del payload para exportación
         const listaResumen: ResumenEnvio[] = res.results.map((item: any) => {
           let estadoFinal: 'viable' | 'rechazado' | 'verificar' = 'viable';
+          let motivoTexto = 'Cumple con los parámetros de riesgo';
 
-          if (item.message) {
+          const esErrorTecnico = item.message && item.message.toLowerCase().includes('error');
+          const estaLimpio = !item.data || (!item.data.denominacion && !item.data.periodos);
+
+          if (esErrorTecnico) {
             estadoFinal = 'verificar';
-          } else if (item.data) {
-            const an = this.procesarRiesgoCompleto(item.data);
-            estadoFinal = an.rechazado ? 'rechazado' : 'viable';
+            motivoTexto = 'Error de conexión: ' + item.message;
+          } else if (estaLimpio) {
+            estadoFinal = 'viable';
+            motivoTexto = 'Sin historial crediticio (Limpio)';
           } else {
-            estadoFinal = 'verificar';
+            const an = this.procesarRiesgoCompleto(item.data);
+            if (an.rechazado) {
+              estadoFinal = 'rechazado';
+              motivoTexto = an.motivoRechazo || 'Riesgo elevado';
+            }
           }
 
           return {
-            cuit: item.data?.identificacion?.toString() || item.id?.toString() || '0',
-            status: estadoFinal
+            cuit: item.data?.identificacion?.toString() || item.cuit || '0',
+            status: estadoFinal,
+            motivo: motivoTexto
           };
         });
 
         this.payloadFinal.set({ data: listaResumen });
-
         this.loteParaEnviar.set([]);
         this.cargandoMasivo.set(false);
-        this.mostrarDetalles.set(true);
+
+        if (res.status !== false) {
+          this.mostrarDetalles.set(true);
+        }
       },
-      error: () => this.cargandoMasivo.set(false)
+      error: () => {
+        this.cargandoMasivo.set(false);
+        this.errorConsulta.set("Error de comunicación.");
+      }
     });
   }
 
   private mapearResultado(item: any, nuevoId: number) {
-    const tituloConsulta = `CONSULTA #${nuevoId}`;
+    const estaLimpio = !item.data || (!item.data.denominacion && !item.data.periodos);
+    const esErrorTecnico = item.message && item.message.toLowerCase().includes('error');
 
-    if (item.message) {
+    if (esErrorTecnico) {
       return {
         id: nuevoId,
-        cuit: item.data?.identificacion?.toString() || item.id?.toString() || 'S/D',
-        nombre: `${tituloConsulta} - Observación`,
-        analisis: { motivoRechazo: item.message, esErrorValidacion: true }
-      } as ConsultaCuit;
+        cuit: item.cuit || 'S/D',
+        nombre: 'Error de consulta',
+        analisis: { motivoRechazo: item.message, esErrorValidacion: true, rechazado: false }
+      } as any;
+    }
+
+    if (estaLimpio) {
+      return {
+        id: nuevoId,
+        cuit: item.cuit || 'S/D',
+        nombre: 'Sin historial crediticio',
+        dataDeuda: null,
+        analisis: {
+          motivoRechazo: 'Sin historial (Limpio)',
+          esErrorValidacion: false,
+          rechazado: false,
+          totalDeuda: 0,
+          maloDeuda: 0,
+          chequesParaMostrar: []
+        },
+        abierto: false
+      } as any;
     }
 
     const analisis = this.procesarRiesgoCompleto(item.data);
     return {
       id: nuevoId,
-      cuit: item.data?.identificacion?.toString() || item.id?.toString() || 'S/D',
-      nombre: item.data?.denominacion || tituloConsulta,
+      cuit: item.data.identificacion?.toString(),
+      nombre: item.data.denominacion,
       dataDeuda: { results: item.data },
       analisis: { ...analisis, esErrorValidacion: false },
       abierto: false,
       chequesAbierto: false
     } as ConsultaCuit;
-  }
-
-  descargarReporteExcel() {
-    const payload = this.payloadFinal();
-    if (!payload) return;
-
-    this.cargandoMasivo.set(true);
-    this.bcraSvc.enviarDatosExcel(payload).subscribe({
-      next: (blob: Blob) => {
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Reporte_BCRA_${new Date().getTime()}.xlsx`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        this.cargandoMasivo.set(false);
-      },
-      error: () => {
-        this.cargandoMasivo.set(false);
-        this.errorConsulta.set("Error al generar el archivo Excel.");
-      }
-    });
   }
 
   private procesarRiesgoCompleto(data: any) {
@@ -208,6 +214,7 @@ export class HomeComponent {
     tresMesesAtras.setMonth(tresMesesAtras.getMonth() - 3);
     let chequesFiltrados: any[] = [];
 
+    // 1. Procesamiento de Cheques
     if (data?.causales) {
       data.causales.forEach((c: any) => {
         c.entidades?.forEach((ent: any) => {
@@ -215,39 +222,66 @@ export class HomeComponent {
             const fechaRechazo = new Date(det.fechaRechazo);
             return det.fechaPago === null && fechaRechazo >= tresMesesAtras;
           }) || [];
+          detallesRecientes.forEach((det: any) => {
+            if (c.causal === "SIN FONDOS") {
+              cantidadChequesSinFondo++;
+              montoTotalChequesSinFondo += det.monto;
+              tieneChequesSinFondoRecientes = true;
+            }
+          });
           if (detallesRecientes.length > 0) {
-            detallesRecientes.forEach((det: any) => {
-              if (c.causal === "SIN FONDOS") {
-                cantidadChequesSinFondo++;
-                montoTotalChequesSinFondo += det.monto;
-                tieneChequesSinFondoRecientes = true;
-              }
-            });
             chequesFiltrados.push({ entidad: ent.entidad, causal: c.causal, detalle: detallesRecientes });
           }
         });
       });
     }
 
+    // 2. Procesamiento de Deuda y Situación Máxima
     const entidades = data?.periodos?.[0]?.entidades || [];
-    const totalDeuda = entidades.reduce((acc: number, e: any) => acc + (e.monto || 0), 0) * 1000;
-    const deudaMala = entidades.filter((e: any) => e.situacion > 2).reduce((acc: number, e: any) => acc + (e.monto || 0), 0) * 1000;
+    let situacionMaxima = 0;
+    let deudaIrregularTotal = 0;
+    const totalDeudaGeneral = entidades.reduce((acc: number, e: any) => acc + (e.monto || 0), 0) * 1000;
+
+    entidades.forEach((e: any) => {
+      if (e.situacion > situacionMaxima) situacionMaxima = e.situacion;
+      if (e.situacion > 2) {
+        deudaIrregularTotal += (e.monto || 0) * 1000;
+      }
+    });
+
+    const tieneDeudaIrregularSignificativa = deudaIrregularTotal > (totalDeudaGeneral * 0.1);
+    let motivosArray: string[] = [];
+
+    if (tieneChequesSinFondoRecientes) {
+      motivosArray.push("Cheques Sin Fondos detectados (últimos 3 meses)");
+    }
+
+    if (tieneDeudaIrregularSignificativa) {
+      const deudaFormateada = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(deudaIrregularTotal);
+      motivosArray.push(`Situación Crediticia Máxima ${situacionMaxima} (Monto Sit>2 ${deudaFormateada})`);
+    }
 
     return {
-      totalDeuda,
-      maloDeuda: deudaMala,
+      totalDeuda: totalDeudaGeneral,
+      maloDeuda: deudaIrregularTotal,
       tieneChequesSinFondoRecientes,
-      motivoRechazo: tieneChequesSinFondoRecientes ? 'Cheques impagos' : (deudaMala > (totalDeuda * 0.1) ? 'Situación irregular' : null),
-      rechazado: tieneChequesSinFondoRecientes || deudaMala > (totalDeuda * 0.1),
+      motivoRechazo: motivosArray.length > 0 ? motivosArray.join(" y ") : null,
+      rechazado: tieneChequesSinFondoRecientes || tieneDeudaIrregularSignificativa,
       cantidadChequesSinFondo,
       montoTotalChequesSinFondo,
       chequesParaMostrar: chequesFiltrados
     };
   }
 
-  enviarDatosAProcesar() {
-    const payload = this.payloadFinal();
-    if (payload) console.log('Enviando JSON:', JSON.stringify(payload));
+  reintentarLote() {
+    this.loteParaEnviar.set(this.cuitsFallidos());
+    this.hayErrorStatus.set(false);
+    this.ejecutarConsultaLote();
+  }
+
+  verLoCapturado() {
+    this.hayErrorStatus.set(false);
+    this.mostrarDetalles.set(true);
   }
 
   quitarDelLote(index: number) {
@@ -275,10 +309,28 @@ export class HomeComponent {
     return "px-3 py-1 rounded-full text-[11px] font-bold bg-red-100 text-red-700";
   }
 
+  descargarReporteExcel() {
+    const payload = this.payloadFinal();
+    if (!payload) return;
+    this.cargandoMasivo.set(true);
+    this.bcraSvc.enviarDatosExcel(payload).subscribe({
+      next: (blob: Blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Reporte_BCRA_${new Date().getTime()}.xlsx`;
+        a.click();
+        this.cargandoMasivo.set(false);
+      },
+      error: () => this.cargandoMasivo.set(false)
+    });
+  }
+
   limpiarTodo() {
     this.consultasAcumuladas.set([]);
-    this.resumenParaExportar.set([]);
-    this.payloadFinal.set(null); // Botón de descarga desaparece
+    this.payloadFinal.set(null);
     this.mostrarDetalles.set(false);
+    this.hayErrorStatus.set(false);
+    this.loteParaEnviar.set([]);
   }
 }
