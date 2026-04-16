@@ -2,16 +2,15 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BcraService } from '../bcra.service';
-import { catchError, delay, forkJoin, of } from 'rxjs';
-import { HeaderComponent } from '../components/header/header.component';
+import * as XLSX from 'xlsx';
 
 interface ConsultaCuit {
+  id?: number;
   cuit: string;
   nombre: string;
   dataDeuda: any;
-  dataCheques: any;
-  abierto?: boolean
-  chequesAbierto?: boolean,
+  abierto?: boolean;
+  chequesAbierto?: boolean;
   analisis: {
     totalDeuda: number;
     maloDeuda: number;
@@ -20,7 +19,15 @@ interface ConsultaCuit {
     rechazado: boolean;
     cantidadChequesSinFondo: number;
     montoTotalChequesSinFondo: number;
+    chequesParaMostrar: any[];
+    esErrorValidacion?: boolean;
   } | null;
+}
+
+interface ResumenEnvio {
+  cuit: string;
+  status: 'viable' | 'rechazado' | 'verificar';
+  motivo: string;
 }
 
 @Component({
@@ -35,163 +42,298 @@ export class HomeComponent {
   private bcraSvc = inject(BcraService);
 
   cuitBusqueda = '';
-  cargando = signal<boolean>(false);
+  cargandoMasivo = signal<boolean>(false);
   errorConsulta = signal<string | null>(null);
-  consultasAcumuladas = signal<ConsultaCuit[]>([]);
   mostrarDetalles = signal<boolean>(false);
 
-  // En home.component.ts
-  toggleAccordion(index: number) {
-    this.consultasAcumuladas.update(consultas => {
-      const nuevas = [...consultas];
-      // Cerramos los demás para que sea un accordion verdadero (opcional)
-      nuevas.forEach((c, i) => { if (i !== index) c.abierto = false; });
-      nuevas[index].abierto = !nuevas[index].abierto;
-      return nuevas;
-    });
-  }
+  hayErrorStatus = signal<boolean>(false);
+  cuitsFallidos = signal<string[]>([]);
 
-  toggleCheques(index: number, event: Event) {
-    event.stopPropagation(); // Evitamos que el click dispare el acordeón principal
-    this.consultasAcumuladas.update(consultas => {
-      const nuevas = [...consultas];
-      nuevas[index].chequesAbierto = !nuevas[index].chequesAbierto;
-      return nuevas;
-    });
-  }
+  loteParaEnviar = signal<string[]>([]);
+  consultasAcumuladas = signal<ConsultaCuit[]>([]);
+  payloadFinal = signal<{ data: ResumenEnvio[] } | null>(null);
 
-  agregarConsulta() {
-    const cuit = this.cuitBusqueda.trim();
-    if (!cuit || cuit.length < 11) return;
-
-    if (this.consultasAcumuladas().some(c => c.cuit === cuit)) {
-      this.errorConsulta.set(`El CUIT ${cuit} ya está en la lista.`);
+  agregarCuitALote() {
+    const cuitLimpio = this.cuitBusqueda.replace(/\D/g, '');
+    if (cuitLimpio.length < 7 || cuitLimpio.length > 13) {
+      this.errorConsulta.set("El CUIT debe tener entre 9 y 11 dígitos.");
       return;
     }
-
-    this.cargando.set(true);
+    this.loteParaEnviar.update(actual => [...actual, cuitLimpio]);
+    this.cuitBusqueda = '';
     this.errorConsulta.set(null);
-
-
-    forkJoin({
-      deuda: this.bcraSvc.getDeudas(cuit).pipe(catchError(() => of(null))),
-      cheques: this.bcraSvc.getChequesRechazados(cuit).pipe(catchError(() => of(null)))
-    })
-      .pipe(delay(500))
-      .subscribe({
-        next: (res) => {
-          if (res.deuda && res.deuda.results) {
-            const analisis = this.procesarRiesgoCompleto(res.deuda, res.cheques);
-            const nombrePersona = res.deuda.results.denominacion || 'Nombre no disponible';
-
-            this.consultasAcumuladas.update(prev => [...prev, {
-              cuit: cuit,
-              nombre: nombrePersona,
-              dataDeuda: res.deuda,
-              dataCheques: res.cheques,
-              analisis: analisis
-            }]);
-
-            this.cuitBusqueda = '';
-          } else {
-            this.errorConsulta.set(`El CUIT ${cuit} ya fue consultado, espere un momento.`);
-          }
-          this.cargando.set(false);
-        }
-      });
   }
 
-  private procesarRiesgoCompleto(deuda: any, cheques: any) {
-    // Variables para el análisis de cheques
+  procesarArchivoExcel(event: any) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e: any) => {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const matriz: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+      const filasConDatos = matriz.filter(fila => fila[0] !== undefined && fila[0] !== null && String(fila[0]).trim() !== "");
+
+      if (filasConDatos.length > 25) {
+        this.errorConsulta.set("El archivo solo puede contener hasta 25 CUITs.");
+        event.target.value = '';
+        return;
+      }
+
+      const nuevosCuits: string[] = [];
+      filasConDatos.forEach(fila => {
+        const cuit = String(fila[0]).replace(/\D/g, '');
+        if (cuit.length >= 7 && cuit.length <= 15) {
+          nuevosCuits.push(cuit);
+        }
+      });
+
+      this.loteParaEnviar.update(prev => [...prev, ...nuevosCuits]);
+      event.target.value = '';
+      this.errorConsulta.set(null);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  ejecutarConsultaLote() {
+    const dataAEnviar = this.loteParaEnviar();
+    if (dataAEnviar.length === 0) return;
+
+    this.cargandoMasivo.set(true);
+    this.hayErrorStatus.set(false);
+    this.consultasAcumuladas.set([]);
+    this.payloadFinal.set(null);
+
+    this.bcraSvc.getDeudas({ data: dataAEnviar }).subscribe({
+      next: (res) => {
+        if (res.status === false) {
+          this.hayErrorStatus.set(true);
+          this.cuitsFallidos.set(dataAEnviar);
+        }
+
+        const nuevosResultados = res.results.map((item: any, index: number) =>
+          this.mapearResultado(item, index + 1)
+        );
+
+        this.consultasAcumuladas.set(nuevosResultados);
+
+        const listaResumen: ResumenEnvio[] = res.results.map((item: any) => {
+          let estadoFinal: 'viable' | 'rechazado' | 'verificar' = 'viable';
+          let motivoTexto = 'Cumple con los parámetros de riesgo';
+
+          // Cambiamos la lógica: Cualquier mensaje (11 dígitos, Dígito verificador, Error conexión) va a VERIFICAR
+          const tieneMensajeError = item.message && item.message.length > 0;
+          const estaLimpio = !item.data || (!item.data.denominacion && !item.data.periodos);
+
+          if (tieneMensajeError) {
+            estadoFinal = 'verificar';
+            motivoTexto = item.message; // "El CUIT debe tener 11 dígitos", etc.
+          } else if (estaLimpio) {
+            estadoFinal = 'viable';
+            motivoTexto = 'Sin historial crediticio';
+          } else {
+            const an = this.procesarRiesgoCompleto(item.data);
+            if (an.rechazado) {
+              estadoFinal = 'rechazado';
+              motivoTexto = an.motivoRechazo || 'Riesgo elevado';
+            }
+          }
+
+          return {
+            cuit: item.data?.identificacion?.toString() || item.cuit || '0',
+            status: estadoFinal,
+            motivo: motivoTexto
+          };
+        });
+
+        this.payloadFinal.set({ data: listaResumen });
+        this.loteParaEnviar.set([]);
+        this.cargandoMasivo.set(false);
+
+        if (res.status !== false) {
+          this.mostrarDetalles.set(true);
+        }
+      },
+      error: () => {
+        this.cargandoMasivo.set(false);
+        this.errorConsulta.set("Error de comunicación.");
+      }
+    });
+  }
+
+  private mapearResultado(item: any, nuevoId: number) {
+    const tieneMensajeError = item.message && item.message.length > 0;
+    const estaLimpio = !item.data || (!item.data.denominacion && !item.data.periodos);
+
+    if (tieneMensajeError) {
+      return {
+        id: nuevoId,
+        cuit: item.data?.identificacion?.toString() || item.cuit || 'S/D',
+        nombre: 'Validación BCRA',
+        analisis: {
+          motivoRechazo: item.message,
+          esErrorValidacion: true,
+          rechazado: false // Aparece como amarillo/verificar
+        }
+      } as any;
+    }
+
+    if (estaLimpio) {
+      return {
+        id: nuevoId,
+        cuit: item.data?.identificacion?.toString() || item.cuit || 'S/D',
+        nombre: 'Sin historial crediticio',
+        dataDeuda: null,
+        analisis: {
+          motivoRechazo: 'Sin historial (Limpio)',
+          esErrorValidacion: false,
+          rechazado: false,
+          totalDeuda: 0,
+          maloDeuda: 0,
+          chequesParaMostrar: []
+        },
+        abierto: false
+      } as any;
+    }
+
+    const analisis = this.procesarRiesgoCompleto(item.data);
+    return {
+      id: nuevoId,
+      cuit: item.data.identificacion?.toString(),
+      nombre: item.data.denominacion,
+      dataDeuda: { results: item.data },
+      analisis: { ...analisis, esErrorValidacion: false },
+      abierto: false,
+      chequesAbierto: false
+    } as ConsultaCuit;
+  }
+
+  private procesarRiesgoCompleto(data: any) {
     let tieneChequesSinFondoRecientes = false;
     let cantidadChequesSinFondo = 0;
     let montoTotalChequesSinFondo = 0;
+    const tresMesesAtras = new Date();
+    tresMesesAtras.setMonth(tresMesesAtras.getMonth() - 3);
+    let chequesFiltrados: any[] = [];
 
-    const seisMesesAtras = new Date();
-    seisMesesAtras.setMonth(seisMesesAtras.getMonth() - 6);
-
-    // 1. Procesamiento de Cheques (Causal: SIN FONDOS)
-    if (cheques?.results?.causales) {
-      const sinFondos = cheques.results.causales.find((c: any) => c.causal === "SIN FONDOS");
-
-      if (sinFondos) {
-        sinFondos.entidades.forEach((ent: any) => {
-          // Filtramos los detalles para quedarnos solo con los que no tienen fecha de pago
-          const chequesSinPago = ent.detalle.filter((det: any) => det.fechaPago === null);
-
-          chequesSinPago.forEach((det: any) => {
-            // 1. Sumamos solo si el cheque sigue impago
-            cantidadChequesSinFondo++;
-            montoTotalChequesSinFondo += (det.monto || 0);
-
-            // 2. Verificamos si este rechazo impago es reciente (últimos 6 meses)
+    if (data?.causales) {
+      data.causales.forEach((c: any) => {
+        c.entidades?.forEach((ent: any) => {
+          const detallesRecientes = ent.detalle?.filter((det: any) => {
             const fechaRechazo = new Date(det.fechaRechazo);
-            if (fechaRechazo >= seisMesesAtras) {
+            return det.fechaPago === null && fechaRechazo >= tresMesesAtras;
+          }) || [];
+          detallesRecientes.forEach((det: any) => {
+            if (c.causal === "SIN FONDOS") {
+              cantidadChequesSinFondo++;
+              montoTotalChequesSinFondo += det.monto;
               tieneChequesSinFondoRecientes = true;
             }
           });
+          if (detallesRecientes.length > 0) {
+            chequesFiltrados.push({ entidad: ent.entidad, causal: c.causal, detalle: detallesRecientes });
+          }
         });
-      }
+      });
     }
 
-    // 2. Procesamiento de Deuda Bancaria
-    // Tomamos el periodo más reciente (índice 0)
-    const periodoReciente = deuda.results.periodos[0];
-    const entidades = periodoReciente?.entidades || [];
+    const entidades = data?.periodos?.[0]?.entidades || [];
+    let situacionMaxima = 0;
+    let deudaIrregularTotal = 0;
+    const totalDeudaGeneral = entidades.reduce((acc: number, e: any) => acc + (e.monto || 0), 0) * 1000;
 
-    const totalDeuda = entidades.reduce((acc: number, e: any) => acc + (e.monto || 0), 0) * 1000;
-    const deudaMala = entidades
-      .filter((e: any) => e.situacion > 2)
-      .reduce((acc: number, e: any) => acc + (e.monto || 0), 0) * 1000;
+    entidades.forEach((e: any) => {
+      if (e.situacion > situacionMaxima) situacionMaxima = e.situacion;
+      if (e.situacion > 2) {
+        deudaIrregularTotal += (e.monto || 0) * 1000;
+      }
+    });
 
-    const porcentajeMalo = totalDeuda > 0 ? (deudaMala * 100) / totalDeuda : 0;
-
-    // 3. Lógica de Decisión (Scoring)
-    let rechazado = false;
-    let motivo = null;
+    const tieneDeudaIrregularSignificativa = deudaIrregularTotal > (totalDeudaGeneral * 0.1);
+    let motivosArray: string[] = [];
 
     if (tieneChequesSinFondoRecientes) {
-      rechazado = true;
-      motivo = `Cheques sin fondo recientes (${cantidadChequesSinFondo} en total)`;
-    } else if (porcentajeMalo > 10) {
-      rechazado = true;
-      motivo = `Exceso de deuda irregular: ${porcentajeMalo.toFixed(1)}% (Situación > 2)`;
+      motivosArray.push("Cheques Sin Fondos detectados (últimos 3 meses)");
     }
 
-    // 4. Retorno del objeto de análisis
+    if (tieneDeudaIrregularSignificativa) {
+      const deudaFormateada = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' }).format(deudaIrregularTotal);
+      motivosArray.push(`Situación Crediticia Máxima ${situacionMaxima} (Monto Sit>2 ${deudaFormateada})`);
+    }
+
     return {
-      totalDeuda: totalDeuda,
-      maloDeuda: deudaMala,
+      totalDeuda: totalDeudaGeneral,
+      maloDeuda: deudaIrregularTotal,
       tieneChequesSinFondoRecientes,
-      cantidadChequesSinFondo,       // Cantidad total de cheques "SIN FONDOS"
-      montoTotalChequesSinFondo,      // Suma total de montos de esos cheques
-      motivoRechazo: motivo,
-      rechazado: rechazado
+      motivoRechazo: motivosArray.length > 0 ? motivosArray.join(" y ") : null,
+      rechazado: tieneChequesSinFondoRecientes || tieneDeudaIrregularSignificativa,
+      cantidadChequesSinFondo,
+      montoTotalChequesSinFondo,
+      chequesParaMostrar: chequesFiltrados
     };
   }
 
-  eliminarConsulta(cuit: string) {
-    this.consultasAcumuladas.update(prev => prev.filter(c => c.cuit !== cuit));
-    if (this.consultasAcumuladas().length === 0) this.mostrarDetalles.set(false);
+  reintentarLote() {
+    this.loteParaEnviar.set(this.cuitsFallidos());
+    this.hayErrorStatus.set(false);
+    this.ejecutarConsultaLote();
+  }
+
+  verLoCapturado() {
+    this.hayErrorStatus.set(false);
+    this.mostrarDetalles.set(true);
+  }
+
+  quitarDelLote(index: number) {
+    this.loteParaEnviar.update(actual => actual.filter((_, i) => i !== index));
+  }
+
+  toggleAccordion(index: number) {
+    this.consultasAcumuladas.update(l => {
+      l[index].abierto = !l[index].abierto;
+      return [...l];
+    });
+  }
+
+  toggleCheques(index: number, e: Event) {
+    e.stopPropagation();
+    this.consultasAcumuladas.update(l => {
+      l[index].chequesAbierto = !l[index].chequesAbierto;
+      return [...l];
+    });
+  }
+
+  getSituacionClass(s: number) {
+    if (s === 1) return "px-3 py-1 rounded-full text-[11px] font-bold bg-green-100 text-green-700";
+    if (s === 2) return "px-3 py-1 rounded-full text-[11px] font-bold bg-yellow-100 text-yellow-700";
+    return "px-3 py-1 rounded-full text-[11px] font-bold bg-red-100 text-red-700";
+  }
+
+  descargarReporteExcel() {
+    const payload = this.payloadFinal();
+    if (!payload) return;
+    this.cargandoMasivo.set(true);
+    this.bcraSvc.enviarDatosExcel(payload).subscribe({
+      next: (blob: Blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Reporte_BCRA_${new Date().getTime()}.xlsx`;
+        a.click();
+        this.cargandoMasivo.set(false);
+      },
+      error: () => this.cargandoMasivo.set(false)
+    });
   }
 
   limpiarTodo() {
     this.consultasAcumuladas.set([]);
+    this.payloadFinal.set(null);
     this.mostrarDetalles.set(false);
-    this.errorConsulta.set(null);
-    this.cuitBusqueda = '';
-  }
-
-  toggleMostrar() { this.mostrarDetalles.set(true); }
-
-  formatPeriodo(p: string) {
-    return p ? `${p.substring(4)}/${p.substring(2, 4)}` : 'N/A';
-  }
-
-  getSituacionClass(s: number) {
-    const base = "px-3 py-1 rounded-full text-[11px] font-bold ";
-    if (s === 1) return base + "bg-green-100 text-green-700";
-    if (s === 2) return base + "bg-yellow-100 text-yellow-700";
-    return base + "bg-red-100 text-red-700";
+    this.hayErrorStatus.set(false);
+    this.loteParaEnviar.set([]);
   }
 }
