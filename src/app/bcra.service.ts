@@ -12,11 +12,11 @@ export class BcraService {
   // USA EL PREFIJO EXACTO QUE PUSIMOS EN EL PROXY (api-bcra)
   // IMPORTANTE: Sin barra al final
 
-  apiUrlLucas = 'http://192.168.2.106:3000/BCRA-debts';
-  // apiUrlLucas = 'https://api2.redautoshop.com.ar/api/v1/bcra/BCRA-debts';
+  // apiUrlLucas = 'http://192.168.2.106:3000/BCRA-debts';
+  apiUrlLucas = 'https://api2.redautoshop.com.ar/api/v1/bcra/BCRA-debts';
 
-  apiExcel = 'http://192.168.2.106:3000/BCRA-report'
-  // apiExcel = 'https://api2.redautoshop.com.ar/api/v1/bcra/BCRA-report'
+  // apiExcel = 'http://192.168.2.106:3000/BCRA-report'
+  apiExcel = 'https://api2.redautoshop.com.ar/api/v1/bcra/BCRA-report'
 
   private baseUrl = 'https://api.bcra.gob.ar/centraldedeudores/v1.0/Deudas';
 
