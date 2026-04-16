@@ -55,7 +55,7 @@ export class HomeComponent {
 
   agregarCuitALote() {
     const cuitLimpio = this.cuitBusqueda.replace(/\D/g, '');
-    if (cuitLimpio.length < 9 || cuitLimpio.length > 11) {
+    if (cuitLimpio.length < 7 || cuitLimpio.length > 13) {
       this.errorConsulta.set("El CUIT debe tener entre 9 y 11 dígitos.");
       return;
     }
