@@ -170,7 +170,7 @@ export class HomeComponent {
     if (esErrorTecnico) {
       return {
         id: nuevoId,
-        cuit: item.cuit || 'S/D',
+        cuit: item.data.identificacion?.toString() || 'S/D',
         nombre: 'Error de consulta',
         analisis: { motivoRechazo: item.message, esErrorValidacion: true, rechazado: false }
       } as any;
@@ -179,7 +179,7 @@ export class HomeComponent {
     if (estaLimpio) {
       return {
         id: nuevoId,
-        cuit: item.cuit || 'S/D',
+        cuit: item.data.identificacion?.toString() || 'S/D',
         nombre: 'Sin historial crediticio',
         dataDeuda: null,
         analisis: {
