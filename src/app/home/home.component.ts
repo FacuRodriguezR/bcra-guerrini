@@ -124,12 +124,13 @@ export class HomeComponent {
           let estadoFinal: 'viable' | 'rechazado' | 'verificar' = 'viable';
           let motivoTexto = 'Cumple con los parámetros de riesgo';
 
-          const esErrorTecnico = item.message && item.message.toLowerCase().includes('error');
+          // Cambiamos la lógica: Cualquier mensaje (11 dígitos, Dígito verificador, Error conexión) va a VERIFICAR
+          const tieneMensajeError = item.message && item.message.length > 0;
           const estaLimpio = !item.data || (!item.data.denominacion && !item.data.periodos);
 
-          if (esErrorTecnico) {
+          if (tieneMensajeError) {
             estadoFinal = 'verificar';
-            motivoTexto = 'Error de conexión: ' + item.message;
+            motivoTexto = item.message; // "El CUIT debe tener 11 dígitos", etc.
           } else if (estaLimpio) {
             estadoFinal = 'viable';
             motivoTexto = 'Sin historial crediticio';
@@ -164,22 +165,26 @@ export class HomeComponent {
   }
 
   private mapearResultado(item: any, nuevoId: number) {
+    const tieneMensajeError = item.message && item.message.length > 0;
     const estaLimpio = !item.data || (!item.data.denominacion && !item.data.periodos);
-    const esErrorTecnico = item.message && item.message.toLowerCase().includes('error');
 
-    if (esErrorTecnico) {
+    if (tieneMensajeError) {
       return {
         id: nuevoId,
-        cuit: item.data.identificacion?.toString() || 'S/D',
-        nombre: 'Error de consulta',
-        analisis: { motivoRechazo: item.message, esErrorValidacion: true, rechazado: false }
+        cuit: item.data?.identificacion?.toString() || item.cuit || 'S/D',
+        nombre: 'Validación BCRA',
+        analisis: {
+          motivoRechazo: item.message,
+          esErrorValidacion: true,
+          rechazado: false // Aparece como amarillo/verificar
+        }
       } as any;
     }
 
     if (estaLimpio) {
       return {
         id: nuevoId,
-        cuit: item.data.identificacion?.toString() || 'S/D',
+        cuit: item.data?.identificacion?.toString() || item.cuit || 'S/D',
         nombre: 'Sin historial crediticio',
         dataDeuda: null,
         analisis: {
@@ -214,7 +219,6 @@ export class HomeComponent {
     tresMesesAtras.setMonth(tresMesesAtras.getMonth() - 3);
     let chequesFiltrados: any[] = [];
 
-    // 1. Procesamiento de Cheques
     if (data?.causales) {
       data.causales.forEach((c: any) => {
         c.entidades?.forEach((ent: any) => {
@@ -236,7 +240,6 @@ export class HomeComponent {
       });
     }
 
-    // 2. Procesamiento de Deuda y Situación Máxima
     const entidades = data?.periodos?.[0]?.entidades || [];
     let situacionMaxima = 0;
     let deudaIrregularTotal = 0;
